@@ -55,7 +55,7 @@ crawl_cache/
 .codex-container.toml
 .codex-mcp.config
 
-.github/
+# (was ".github/" — removed so release workflow can be tracked)
 docs/
 
 # Combat arena

@@ -124,7 +124,7 @@ gcloud run deploy grubcrawler --region us-central1 --project gnosis-459403 `
 
 **Option A — local build (slowest first time, fast after):**
 ```powershell
-./deploy.ps1 -Target local
+./scripts/deploy.ps1 -Target local
 # → docker-compose up -d. Listens on http://localhost:6792
 ```
 

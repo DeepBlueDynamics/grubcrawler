@@ -164,7 +164,6 @@ async def detect_challenge(page) -> ChallengeDetection:
                 "performance & security by cloudflare",
                 "attention required! | cloudflare",
                 "/cdn-cgi/challenge-platform/",
-                "data-cf-",
                 "cf-mitigated",
             ]
             weak_signals = [

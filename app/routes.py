@@ -110,9 +110,8 @@ async def crawl_single_url(
         session_id = request.session_id or str(uuid.uuid4())
         
         # Perform crawl with request options
-        javascript_enabled = request.javascript_enabled if request.javascript_enabled is not None else request.options.javascript
         javascript_payload = request.javascript_payload or request.options.javascript_payload
-
+        javascript_enabled = (request.javascript_enabled if request.javascript_enabled is not None else request.options.javascript) or bool(javascript_payload)
         # Resolve proxy (per-request overrides env-based default)
         proxy = resolve_proxy(getattr(request.options, 'proxy', None))
 
@@ -254,9 +253,8 @@ async def crawl_markdown_only(
         
         # Perform crawl(s) with stable response contract
         url_candidates = request.urls or ([request.url] if request.url else [])
-        javascript_enabled = request.javascript_enabled if request.javascript_enabled is not None else request.options.javascript
         javascript_payload = request.javascript_payload or request.options.javascript_payload
-
+        javascript_enabled = (request.javascript_enabled if request.javascript_enabled is not None else request.options.javascript) or bool(javascript_payload)
         # Resolve proxy (per-request overrides env-based default)
         proxy = resolve_proxy(getattr(request.options, 'proxy', None))
 
@@ -436,9 +434,8 @@ async def crawl_raw_html(
     try:
         customer_identifier = get_customer_identifier(request.customer_id, user_email)
         crawler = await get_crawler_engine(customer_identifier)
-        javascript_enabled = request.javascript_enabled if request.javascript_enabled is not None else request.options.javascript
         javascript_payload = request.javascript_payload or request.options.javascript_payload
-
+        javascript_enabled = (request.javascript_enabled if request.javascript_enabled is not None else request.options.javascript) or bool(javascript_payload)
         proxy = resolve_proxy(getattr(request.options, 'proxy', None))
 
         result = await crawler.crawl_raw_html(
@@ -506,9 +503,8 @@ async def crawl_batch_urls(
         
         # Convert URLs to strings
         url_list = [str(url) for url in request.urls]
-        javascript_enabled = request.javascript_enabled if request.javascript_enabled is not None else request.options.javascript
         javascript_payload = request.javascript_payload or request.options.javascript_payload
-        
+        javascript_enabled = (request.javascript_enabled if request.javascript_enabled is not None else request.options.javascript) or bool(javascript_payload)       
         logger.info(f"Starting batch crawl for {len(url_list)} URLs (customer: {customer_identifier})")
         
         # Resolve proxy

@@ -717,7 +717,7 @@ gcloud run deploy grubcrawler \
 ### Local Docker
 
 ```bash
-./deploy.ps1 -Target local
+./scripts/deploy.ps1 -Target local
 # Test at http://localhost:6792
 ```
 

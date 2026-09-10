@@ -649,18 +649,16 @@ class BrowserEngine:
                                 await get_cookie_store().save_from_context(context, domain, proxy_server)
 
                             # Execute user-provided JavaScript payload before capturing HTML
-                            if javascript_enabled and javascript_payload:
+                            if (javascript_enabled or javascript_payload) and javascript_payload:
                                 try:
                                     logger.info("Executing custom JavaScript payload")
                                     await page.evaluate(
                                         """
                                         async payload => {
-                                            const executor = new Function("return (async () => { " + payload + "\\n})();");
                                             try {
-                                                return await executor();
-                                            } catch (error) {
-                                                console.error("Injected JavaScript payload failed", error);
-                                                throw error;
+                                                return await eval(payload);
+                                            } catch {
+                                                return await new Function("return (async () => { " + payload + "\\n})();")();
                                             }
                                         }
                                         """,
@@ -671,6 +669,7 @@ class BrowserEngine:
                                     wait_ms += 500
                                 except Exception as e:
                                     logger.warning(f"JavaScript payload execution failed: {e}")
+
 
                             # Get page content
                             content_started_at = asyncio.get_running_loop().time()
@@ -1066,41 +1065,63 @@ class BrowserEngine:
             logger.error(f"Error closing browser: {e}")
     
     async def _check_exit_ip(self):
-        """Check and log the proxy exit IP address.
+        """Check and log the exit IP address without touching the browser.
 
-        Opens a disposable page, hits an IP-check service, logs the result,
-        and always closes the page — even on failure.  Non-fatal: if the
-        check fails the browser continues normally.
+        Uses a plain HTTP request through the same proxy the browser was
+        launched with (if any).  This used to open a throwaway browser
+        context, navigate it to an IP-check service and tear it down again as
+        the very first thing after launch.  On Camoufox that cold-start
+        context churn left the browser's networking wedged: the next context
+        loaded only the document and no subresources, the one after that could
+        not commit a navigation at all, and it only recovered on the third.
+        Doing the check out-of-band avoids the problem entirely.  Non-fatal:
+        failures are logged and the browser continues normally.
         """
         if not self.browser:
             return
-        _ip_page = None
         try:
-            _ctx = await self.browser.new_context()
-            _ip_page = await _ctx.new_page()
-            resp = await _ip_page.goto(
-                "https://httpbin.org/ip", timeout=10000, wait_until="domcontentloaded"
-            )
-            if resp and resp.ok:
-                body = await _ip_page.inner_text("body")
+            try:
+                proxy_url = self._proxy_url_for_httpx()
+            except ValueError as e:
+                logger.info(f"IP check skipped: {e}")
+                return
+            import httpx
+
+            async with httpx.AsyncClient(proxy=proxy_url, timeout=10.0) as client:
+                resp = await client.get("https://httpbin.org/ip")
+            if resp.status_code == 200:
                 try:
-                    import json as _json
-                    ip_addr = _json.loads(body).get("origin", body.strip())
+                    ip_addr = resp.json().get("origin", resp.text.strip())
                 except Exception:
-                    ip_addr = body.strip().replace("\n", " ")
+                    ip_addr = resp.text.strip().replace("\n", " ")
                 logger.info(f"Proxy exit IP: {ip_addr}")
             else:
-                logger.warning(f"IP check returned HTTP {resp.status if resp else 'no response'}")
+                logger.warning(f"IP check returned HTTP {resp.status_code}")
         except Exception as e:
             logger.warning(f"IP check failed (non-fatal): {e}")
-        finally:
-            try:
-                if _ip_page and not _ip_page.is_closed():
-                    await _ip_page.close()
-                if _ctx:
-                    await _ctx.close()
-            except Exception:
-                pass
+
+    def _proxy_url_for_httpx(self) -> Optional[str]:
+        """Turn the Playwright proxy dict into a URL httpx accepts.
+
+        Returns None when no proxy is configured.  Raises ValueError for SOCKS
+        proxies, which httpx cannot use without the optional socksio package.
+        """
+        cfg = self._proxy_config
+        if not cfg or not cfg.get("server"):
+            return None
+        from urllib.parse import quote, urlsplit, urlunsplit
+
+        server = cfg["server"] if "://" in cfg["server"] else f"http://{cfg['server']}"
+        parts = urlsplit(server)
+        if parts.scheme.lower().startswith("socks"):
+            raise ValueError(f"{parts.scheme} proxy is not supported for the out-of-band IP check")
+        username = cfg.get("username")
+        if not username:
+            return server
+        netloc = f"{quote(username, safe='')}:{quote(cfg.get('password') or '', safe='')}@{parts.hostname}"
+        if parts.port:
+            netloc += f":{parts.port}"
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
     async def _restart_with_fresh_proxy(self):
         """Close browser and start fresh one with new proxy session."""

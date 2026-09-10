@@ -321,63 +321,112 @@ class TestProxyErrorHandling:
 
 
 class TestCheckExitIp:
-    """Test _check_exit_ip logs the proxy exit IP and cleans up."""
+    """_check_exit_ip runs out-of-band via httpx and never touches the browser.
+
+    Opening and tearing down a browser context as the first operation after
+    launch wedged Camoufox networking (first crawl loaded only the document),
+    so the check must not create contexts or pages.
+    """
+
+    @staticmethod
+    def _mock_httpx(response=None, side_effect=None):
+        client = MagicMock()
+        client.get = AsyncMock(return_value=response, side_effect=side_effect)
+        client_cls = MagicMock()
+        client_cls.return_value.__aenter__ = AsyncMock(return_value=client)
+        client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        return client_cls, client
 
     @pytest.mark.asyncio
-    async def test_logs_exit_ip_on_success(self):
-        """Successful IP check logs the exit IP address."""
+    async def test_logs_exit_ip_on_success(self, caplog):
+        """Successful IP check logs the exit IP and creates no browser context."""
         engine = BrowserEngine()
-
-        mock_page = AsyncMock()
-        mock_page.goto = AsyncMock(return_value=MagicMock(ok=True, status=200))
-        mock_page.inner_text = AsyncMock(return_value='{"origin": "185.123.45.67"}')
-        mock_page.is_closed = MagicMock(return_value=False)
-        mock_page.close = AsyncMock()
-
-        mock_ctx = AsyncMock()
-        mock_ctx.new_page = AsyncMock(return_value=mock_page)
-        mock_ctx.close = AsyncMock()
-
         engine.browser = AsyncMock()
-        engine.browser.new_context = AsyncMock(return_value=mock_ctx)
+        engine.browser.new_context = AsyncMock()
 
-        await engine._check_exit_ip()
+        resp = MagicMock(status_code=200, text='{"origin": "185.123.45.67"}')
+        resp.json = MagicMock(return_value={"origin": "185.123.45.67"})
+        client_cls, client = self._mock_httpx(response=resp)
 
-        mock_page.goto.assert_awaited_once()
-        mock_page.inner_text.assert_awaited_once_with("body")
-        # Page and context should be cleaned up
-        mock_page.close.assert_awaited_once()
-        mock_ctx.close.assert_awaited_once()
+        with caplog.at_level("INFO"), patch("httpx.AsyncClient", client_cls):
+            await engine._check_exit_ip()
+
+        client.get.assert_awaited_once_with("https://httpbin.org/ip")
+        client_cls.assert_called_once_with(proxy=None, timeout=10.0)
+        engine.browser.new_context.assert_not_awaited()
+        assert "Proxy exit IP: 185.123.45.67" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_nonfatal_on_timeout(self):
-        """IP check failure doesn't raise — browser continues normally."""
+    async def test_uses_browser_proxy(self):
+        """The check goes through the same proxy the browser was launched with."""
         engine = BrowserEngine()
-
-        mock_page = AsyncMock()
-        mock_page.goto = AsyncMock(side_effect=TimeoutError("IP check timed out"))
-        mock_page.is_closed = MagicMock(return_value=False)
-        mock_page.close = AsyncMock()
-
-        mock_ctx = AsyncMock()
-        mock_ctx.new_page = AsyncMock(return_value=mock_page)
-        mock_ctx.close = AsyncMock()
-
         engine.browser = AsyncMock()
-        engine.browser.new_context = AsyncMock(return_value=mock_ctx)
+        engine._proxy_config = {
+            "server": "http://gate.example.com:7000",
+            "username": "user-abc",
+            "password": "p@ss word",
+        }
+        resp = MagicMock(status_code=200, text='{"origin": "1.2.3.4"}')
+        resp.json = MagicMock(return_value={"origin": "1.2.3.4"})
+        client_cls, client = self._mock_httpx(response=resp)
 
-        # Should NOT raise
-        await engine._check_exit_ip()
+        with patch("httpx.AsyncClient", client_cls):
+            await engine._check_exit_ip()
 
-        # Page should still be cleaned up even on failure
-        mock_page.close.assert_awaited_once()
-        mock_ctx.close.assert_awaited_once()
+        client_cls.assert_called_once_with(
+            proxy="http://user-abc:p%40ss%20word@gate.example.com:7000", timeout=10.0
+        )
+
+    @pytest.mark.asyncio
+    async def test_skips_socks_proxy(self, caplog):
+        """SOCKS proxies are skipped (httpx needs socksio) rather than failing."""
+        engine = BrowserEngine()
+        engine.browser = AsyncMock()
+        engine._proxy_config = {"server": "socks5://gate.example.com:1080"}
+        client_cls, client = self._mock_httpx()
+
+        with caplog.at_level("INFO"), patch("httpx.AsyncClient", client_cls):
+            await engine._check_exit_ip()
+
+        client_cls.assert_not_called()
+        assert "IP check skipped" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_nonfatal_on_timeout(self, caplog):
+        """IP check failure doesn't raise and never touches the browser."""
+        engine = BrowserEngine()
+        engine.browser = AsyncMock()
+        engine.browser.new_context = AsyncMock()
+        client_cls, client = self._mock_httpx(side_effect=TimeoutError("IP check timed out"))
+
+        with caplog.at_level("WARNING"), patch("httpx.AsyncClient", client_cls):
+            await engine._check_exit_ip()  # Should NOT raise
+
+        engine.browser.new_context.assert_not_awaited()
+        assert "IP check failed (non-fatal)" in caplog.text
 
     @pytest.mark.asyncio
     async def test_noop_when_no_browser(self):
         """IP check is a no-op when browser is None."""
         engine = BrowserEngine()
         engine.browser = None
+        client_cls, client = self._mock_httpx()
 
-        # Should NOT raise
-        await engine._check_exit_ip()
+        with patch("httpx.AsyncClient", client_cls):
+            await engine._check_exit_ip()
+
+        client_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_nonfatal_on_malformed_proxy_config(self, caplog):
+        """A proxy config that cannot be turned into a URL must not abort startup."""
+        engine = BrowserEngine()
+        engine.browser = AsyncMock()
+        engine._proxy_config = {"server": "http://gate.example.com:7000", "username": object()}
+        client_cls, client = self._mock_httpx()
+
+        with caplog.at_level("WARNING"), patch("httpx.AsyncClient", client_cls):
+            await engine._check_exit_ip()  # Should NOT raise
+
+        client_cls.assert_not_called()
+        assert "IP check failed (non-fatal)" in caplog.text

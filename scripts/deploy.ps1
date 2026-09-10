@@ -24,19 +24,19 @@ Shared HMAC secret for mesh nodes (default: auto-generated)
 URL of a cloud peer to connect to when deploying with mesh enabled
 
 .EXAMPLE
-./deploy.ps1 -Target local
+./scripts/deploy.ps1 -Target local
 Deploy single node to local Docker Compose
 
 .EXAMPLE
-./deploy.ps1 -Target mesh
+./scripts/deploy.ps1 -Target mesh
 Deploy 2-node mesh locally (node-a + node-b)
 
 .EXAMPLE
-./deploy.ps1 -Target cloudrun -Tag v1.0.0
+./scripts/deploy.ps1 -Target cloudrun -Tag v1.0.0
 Deploy to Google Cloud Run
 
 .EXAMPLE
-./deploy.ps1 -Target cloudrun -Tag v1.0.0 -CloudMeshPeer http://localhost:6792 -MeshSecret mykey
+./scripts/deploy.ps1 -Target cloudrun -Tag v1.0.0 -CloudMeshPeer http://localhost:6792 -MeshSecret mykey
 Deploy to Cloud Run with mesh enabled, peering with local node
 #>
 

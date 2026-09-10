@@ -271,22 +271,22 @@ python test_remote_api.py
 
 ### Local Docker
 ```bash
-./deploy.sh local            # or ./deploy.ps1 -Target local
+./scripts/deploy.sh local            # or ./scripts/deploy.ps1 -Target local
 ```
 
 ### 2-Node Mesh
 ```bash
-./deploy.sh mesh             # or ./deploy.ps1 -Target mesh
+./scripts/deploy.sh mesh             # or ./scripts/deploy.ps1 -Target mesh
 ```
 
 ### Google Cloud Run
 ```bash
-./deploy.sh cloudrun v1.0.0  # or ./deploy.ps1 -Target cloudrun -Tag v1.0.0
+./scripts/deploy.sh cloudrun v1.0.0  # or ./scripts/deploy.ps1 -Target cloudrun -Tag v1.0.0
 ```
 
 ### Cloud Run + Mesh
 ```bash
-./deploy.sh cloudrun v1.0.0 --mesh-peer http://your-ip:6792 --mesh-secret mykey
+./scripts/deploy.sh cloudrun v1.0.0 --mesh-peer http://your-ip:6792 --mesh-secret mykey
 ```
 
 ## Security Considerations
@@ -334,8 +334,8 @@ Currently NO validation on customer_id format. Consider adding:
 ## Contact & References
 
 - **Documentation**: README.md
-- **Master Plan**: MASTER_PLAN.md
-- **Customer ID Details**: CUSTOMER_ID_IMPLEMENTATION.md
+- **Master Plan**: plan/MASTER_PLAN.md
+- **Customer ID Details**: plan/CUSTOMER_ID_IMPLEMENTATION.md
 - **Remote Testing**: test_remote_api.py
 - **Gnosis Standards**: Follows gnosis deployment patterns
 
@@ -446,7 +446,7 @@ Users can now pass pre-solved cookies (e.g. from a browser session) to bypass ch
 
 ```powershell
 # Local test first
-./deploy.ps1 -Target local
+./scripts/deploy.ps1 -Target local
 # Then test against http://localhost:6792
 
 # Only then deploy to Cloud Run — MUST use grubcrawler, NOT grub-crawl

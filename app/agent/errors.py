@@ -2,7 +2,7 @@
 
 Every error carries a machine-readable `code` so loop callers never need to
 parse exception messages.  Each code maps to the error semantics defined in
-MASTER_PLAN.md.
+plan/MASTER_PLAN.md.
 """
 
 from __future__ import annotations

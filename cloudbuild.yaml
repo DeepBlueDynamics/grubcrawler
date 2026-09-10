@@ -1,6 +1,6 @@
 # Cloud Build pipeline: build grubcrawler and push to Docker Hub.
 #
-# Used by deploy.ps1 -Target dockerhub-cloud when a local Docker Hub
+# Used by scripts/deploy.ps1 -Target dockerhub-cloud when a local Docker Hub
 # push isn't viable (slow/unstable home network, large camoufox archive).
 # Cloud Build runs on Google's gigabit network so camoufox and chromium
 # downloads complete in seconds, not minutes.

@@ -4,7 +4,7 @@
 
 <br/>
 
-[![License](https://img.shields.io/badge/license-proprietary-red?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-BSD%203--Clause-blue?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Playwright](https://img.shields.io/badge/Playwright-latest-2EAD33?style=flat-square&logo=playwright&logoColor=white)](https://playwright.dev)
@@ -20,7 +20,7 @@
 
 <br/>
 
-<a href="#api-endpoints">Endpoints</a> · <a href="#mesh">Mesh</a> · <a href="#anti-detection">Anti-Detection</a> · <a href="#ghost-protocol">Ghost Protocol</a> · <a href="#live-stream">Live Stream</a> · <a href="#mcp-tools-grub-crawlpy">MCP Tools</a> · <a href="#quick-start">Quick Start</a> · <a href="#benchmarks">Benchmarks</a> · <a href="MASTER_PLAN.md">Architecture</a>
+<a href="#api-endpoints">Endpoints</a> · <a href="#mesh">Mesh</a> · <a href="#anti-detection">Anti-Detection</a> · <a href="#ghost-protocol">Ghost Protocol</a> · <a href="#live-stream">Live Stream</a> · <a href="#mcp-tools-grub-crawlpy">MCP Tools</a> · <a href="#quick-start">Quick Start</a> · <a href="#benchmarks">Benchmarks</a> · <a href="plan/MASTER_PLAN.md">Architecture</a>
 
 ---
 
@@ -51,7 +51,7 @@ We integrated features from every major crawler — then added what none of them
 | **Mesh P2P** | ❌ | ❌ | ❌ | ✅ **gossip protocol** |
 | **Policy enforcement** | ❌ | ❌ | ❌ | ✅ **domain gates + redaction** |
 | **Prompt injection defense** | ❌ | ❌ | ❌ | ✅ **quarantine + visible-text diff** |
-| **License** | Apache 2.0 | AGPL-3.0 | BSD | Proprietary |
+| **License** | Apache 2.0 | AGPL-3.0 | BSD | **BSD-3-Clause** |
 | **Pricing** | Free | Free–$333/mo | Free | Self-hosted |
 
 ### Cloud / Managed Crawlers
@@ -352,8 +352,8 @@ Node A (local)                    Node B (cloud)
 
 ```bash
 # Docker Compose (recommended)
-./deploy.sh mesh           # Linux/Mac
-./deploy.ps1 -Target mesh  # Windows
+./scripts/deploy.sh mesh           # Linux/Mac
+./scripts/deploy.ps1 -Target mesh  # Windows
 
 # Verify
 curl http://localhost:6792/mesh/peers  # Node A sees Node B
@@ -364,7 +364,7 @@ curl http://localhost:6793/mesh/peers  # Node B sees Node A
 
 ```bash
 # Deploy to Cloud Run with mesh
-./deploy.sh cloudrun latest --mesh-peer http://your-local-ip:6792 --mesh-secret mysecret
+./scripts/deploy.sh cloudrun latest --mesh-peer http://your-local-ip:6792 --mesh-secret mysecret
 
 # Start local node
 MESH_ENABLED=true MESH_SECRET=mysecret MESH_PEERS=https://your-cloud-run-url \
@@ -413,6 +413,32 @@ ws.send(JSON.stringify({ action: "scroll", direction: "down" }));
 
 Requires `BROWSER_STREAM_ENABLED=true`. Each Chromium instance uses ~150-300MB RAM.
 
+## Repository Layout
+
+```
+grubcrawler/
+├── app/                    # FastAPI service — crawler, agent, mesh, policy, observability
+├── site/                   # Embedded landing / dashboard / docs pages
+├── tests/                  # Pytest suites
+├── combat/                 # Head-to-head benchmarks vs Crawl4AI / Firecrawl / Scrapy
+├── examples/               # Integration examples (e.g. shivvr demo)
+├── grub_md/                # Native Rust markdown extraction engine (maturin)
+├── scripts/                # Deploy scripts — deploy.sh, deploy.ps1
+├── plan/                   # Architecture & planning docs (MASTER_PLAN, SERVICE_REGISTRY, CUSTOMER_ID)
+├── Dockerfile              # Service image (Playwright + Camoufox + Rust)
+├── docker-compose.yml      # Single-node local deploy
+├── docker-compose.mesh.yml # 2-node mesh deploy
+├── requirements.txt
+├── pytest.ini
+├── mcp.json                # MCP tool config
+├── gnosis-crawl.py         # Standalone CLI client
+└── README.md / CLAUDE.md / DEVELOPER.md / RUNBOOK.md
+```
+
+Invoke deploy scripts from the repo root: `./scripts/deploy.sh local` (bash) or
+`./scripts/deploy.ps1 -Target local` (PowerShell). `deploy.sh` resolves the
+project root itself, so it also runs correctly from any directory.
+
 ## Quick Start
 
 ### Local Development
@@ -452,16 +478,16 @@ curl -X POST http://localhost:6792/api/agent/run \
 
 ```bash
 # Single node
-./deploy.sh local            # or ./deploy.ps1 -Target local
+./scripts/deploy.sh local            # or ./scripts/deploy.ps1 -Target local
 
 # 2-node mesh
-./deploy.sh mesh             # or ./deploy.ps1 -Target mesh
+./scripts/deploy.sh mesh             # or ./scripts/deploy.ps1 -Target mesh
 
 # Cloud Run
-./deploy.sh cloudrun v1.0.0  # or ./deploy.ps1 -Target cloudrun -Tag v1.0.0
+./scripts/deploy.sh cloudrun v1.0.0  # or ./scripts/deploy.ps1 -Target cloudrun -Tag v1.0.0
 
 # Cloud Run + mesh (connect to local node)
-./deploy.sh cloudrun v1.0.0 --mesh-peer http://your-ip:6792 --mesh-secret mykey
+./scripts/deploy.sh cloudrun v1.0.0 --mesh-peer http://your-ip:6792 --mesh-secret mykey
 ```
 
 ### Anti-Detection (Camoufox + Proxy)
@@ -715,8 +741,8 @@ python -m combat.report
 - [ ] Error handling improvements
 - [ ] Monitoring and alerting
 
-See [MASTER_PLAN.md](MASTER_PLAN.md) for the full architecture plan.
+See [MASTER_PLAN.md](plan/MASTER_PLAN.md) for the full architecture plan.
 
 ## License
 
-Grub Crawler Project License
+BSD 3-Clause License. Copyright (c) 2026, DeepBlue Dynamics, LLC. See [LICENSE](LICENSE) for the full text.

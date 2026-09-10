@@ -568,7 +568,7 @@ async def crawl_url(
 
     payload: Dict[str, Any] = {
         "url": url,
-        "javascript_enabled": bool(javascript_enabled),
+        "javascript_enabled": bool(javascript_enabled or javascript_payload),
         "screenshot_mode": "full" if take_screenshot else None,
         "options": {
             "timeout": int(timeout),
@@ -683,7 +683,7 @@ async def crawl_batch(
 
     payload: Dict[str, Any] = {
         "urls": urls,
-        "javascript_enabled": bool(javascript_enabled),
+        "javascript_enabled": bool(javascript_enabled or javascript_payload),
         "screenshot_mode": "full" if take_screenshot else None,
         "async": bool(async_mode),
         "collate": bool(collate),
@@ -811,7 +811,7 @@ async def raw_html(
 
     payload: Dict[str, Any] = {
         "url": url,
-        "javascript_enabled": bool(javascript_enabled),
+        "javascript_enabled": bool(javascript_enabled or javascript_payload),
         "options": {
             "timeout": int(timeout),
         },
