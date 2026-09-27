@@ -266,8 +266,9 @@
 <table>
   <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
   <tr><td class="method">POST</td><td><code>/api/crawl</code></td><td>Crawl URL → HTML + markdown + screenshot</td></tr>
-  <tr><td class="method">POST</td><td><code>/api/markdown</code></td><td>Crawl URL → markdown only (faster)</td></tr>
+  <tr><td class="method">POST</td><td><code>/api/markdown</code></td><td>Crawl URL → markdown only (faster; PDFs come back page by page)</td></tr>
   <tr><td class="method">POST</td><td><code>/api/batch</code></td><td>Crawl multiple URLs in one request</td></tr>
+  <tr><td class="method">POST</td><td><code>/api/pdf/pages</code></td><td>PDF → per-page text + rendered PNG pages</td></tr>
   <tr><td class="method">POST</td><td><code>/api/jobs/crawl</code></td><td>Async job — queue and poll for result</td></tr>
   <tr><td class="method">POST</td><td><code>/api/agent/run</code></td><td>Run bounded LLM agent on a task</td></tr>
   <tr><td class="method">POST</td><td><code>/api/agent/ghost</code></td><td>Ghost Protocol — vision extract a blocked URL</td></tr>

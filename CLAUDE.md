@@ -516,6 +516,20 @@ Settings: `PDF_ENABLED`, `PDF_MAX_BYTES`, `PDF_MAX_PAGES`, `PDF_MIN_TEXT_CHARS`,
 `PDF_VISION_FALLBACK`, `PDF_VISION_MAX_PAGES`, `PDF_VISION_CONCURRENCY`. Tests: `tests/test_pdf.py` (needs pymupdf,
 run inside the container). The vision fallback is skipped, not attempted, when the provider has no API key.
 
+### OCR through Ollama (v0.16.0)
+
+PDF OCR and Ghost vision default to the host's Ollama locally: `docker-compose.yml` sets
+`AGENT_GHOST_VISION_PROVIDER=ollama`, `OLLAMA_BASE_URL=http://host.docker.internal:11434` and
+`OLLAMA_VISION_MODEL=benhaotang/Nanonets-OCR-s:latest` (the model gnosis-ocr used; already pulled on this host).
+`OllamaAdapter.vision` posts to the native `/api/chat` with `keep_alive`, `num_ctx` 8192, temperature 0.01,
+`num_predict` 4096, and `unload_vision()` sends `keep_alive: 0` after the last page so shivvr and the judges get the
+GPU back. Pages are capped at 1280 px on the long side, OCR'd one at a time, retried once when empty, and looping
+output is cut by `pdfx.trim_repetition`. Per-page `source` is `text_layer` | `ocr` | `empty` | `error` with
+`ocr_model`; OCR'd sections carry `<!-- ocr: <model> -->` in the markdown (a request from the Ferricula session,
+which must not quote transcriptions as verbatim text). Cloud Run has no Ollama: it keeps the default `anthropic`
+provider with the `ANTHROPIC_API_KEY` already set on the service. Measured: 22.8 s cold (8.6 s model load), 2.0 s
+warm per page on the RTX 3060.
+
 ### Exit-IP check is out-of-band (v0.14.0)
 
 `BrowserEngine._check_exit_ip` uses httpx through the launch proxy instead of a throwaway browser context.
@@ -525,5 +539,5 @@ for the next crawl (document loaded, no subresources, parser stuck on the first 
 ---
 
 **Last Updated**: September 27, 2026
-**Current Version**: v0.15.0
+**Current Version**: v0.16.0
 **Status**: Production Ready ✅ — deployed to Cloud Run; cookie injection deployed with this revision

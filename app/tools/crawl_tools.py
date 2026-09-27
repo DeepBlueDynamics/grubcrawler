@@ -320,6 +320,7 @@ async def pdf_extract(url: str, max_pages: int = 50, vision: bool = True) -> Dic
             max_pages=max_pages,
             min_text_chars=settings.pdf_min_text_chars,
             dpi=settings.pdf_render_dpi,
+            max_side=settings.pdf_max_image_side,
             max_vision_pages=settings.pdf_vision_max_pages,
             vision_concurrency=settings.pdf_vision_concurrency,
         )
@@ -329,7 +330,7 @@ async def pdf_extract(url: str, max_pages: int = 50, vision: bool = True) -> Dic
             "url": url,
             "title": extraction.title,
             "markdown": extraction.to_markdown(),
-            "pages": [{"number": p.number, "source": p.source, "char_count": p.char_count} for p in extraction.pages],
+            "pages": [p.describe() for p in extraction.pages],
             "metadata": {**extraction.summary(), "size_bytes": len(fetched["content"]), "status": "success"},
         }
     except Exception as e:

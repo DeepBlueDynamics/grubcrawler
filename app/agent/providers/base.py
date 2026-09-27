@@ -174,6 +174,8 @@ def _pick_key(settings, provider: str) -> Optional[str]:
         return settings.openai_api_key
     if provider == "anthropic":
         return settings.anthropic_api_key
+    if provider == "ollama":
+        return settings.ollama_api_key
     return None
 
 

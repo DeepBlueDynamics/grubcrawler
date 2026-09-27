@@ -68,7 +68,8 @@ class Settings(BaseSettings):
     pdf_render_dpi: int = 110
     pdf_vision_fallback: bool = True  # uses the Ghost vision provider when configured
     pdf_vision_max_pages: int = 20
-    pdf_vision_concurrency: int = 2
+    pdf_vision_concurrency: int = 1  # 1 keeps a shared GPU from thrashing
+    pdf_max_image_side: int = 1280  # longest edge of a rendered page sent to OCR, in px
 
     # Live Browser Stream Configuration
     browser_pool_size: int = 1
@@ -85,6 +86,11 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-haiku-4-5-20251001"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b-instruct"
+    ollama_api_key: Optional[str] = None  # bearer token for a hosted Ollama; none for local
+    ollama_vision_model: str = "benhaotang/Nanonets-OCR-s:latest"  # PDF OCR + Ghost vision
+    ollama_keep_alive: str = "5m"  # keep the vision model warm within a document
+    ollama_num_ctx: int = 8192  # ~1.8K image tokens for a 1280px page + 4K output
+    ollama_vision_timeout_s: int = 180  # per page; the first call also loads the model
 
     # Proxy Configuration
     proxy_server: Optional[str] = None

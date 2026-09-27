@@ -703,6 +703,7 @@ class CrawlerEngine:
             max_pages=settings.pdf_max_pages,
             min_text_chars=settings.pdf_min_text_chars,
             dpi=settings.pdf_render_dpi,
+            max_side=settings.pdf_max_image_side,
             max_vision_pages=settings.pdf_vision_max_pages,
             vision_concurrency=settings.pdf_vision_concurrency,
         )
@@ -772,7 +773,7 @@ class CrawlerEngine:
 
         logger.info(
             f"PDF extracted for {url}: {extraction.page_count} pages, mode={extraction.render_mode}, "
-            f"words={result.body_word_count}, vision_pages={extraction.vision_pages}"
+            f"words={result.body_word_count}, ocr_pages={extraction.ocr_pages}, ocr_model={extraction.ocr_model}"
         )
 
     async def fetch_binary(

@@ -21,7 +21,11 @@ services:
       - AGENT_ENABLED=true
       - AGENT_GHOST_ENABLED=true
       - AGENT_GHOST_AUTO_TRIGGER=true
-      - AGENT_GHOST_VISION_PROVIDER=anthropic
+      # Vision (Ghost Protocol + PDF OCR). Local default: the host's Ollama with the
+      # Nanonets OCR model. Cloud Run keeps 'anthropic' via its own env.
+      - AGENT_GHOST_VISION_PROVIDER=${AGENT_GHOST_VISION_PROVIDER:-ollama}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_VISION_MODEL=${OLLAMA_VISION_MODEL:-benhaotang/Nanonets-OCR-s:latest}
       # Internal agent LLM provider (Mode B). 'openai' or 'anthropic' or 'ollama'.
       - AGENT_PROVIDER=${AGENT_PROVIDER:-openai}
       # API keys for the agent + Ghost vision providers. Pulled from shell env.
@@ -47,6 +51,8 @@ services:
       - ./site:/app/site  # Embedded landing page
     networks:
       - gnosis-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # reach the host's Ollama on Linux too
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6792/health"]

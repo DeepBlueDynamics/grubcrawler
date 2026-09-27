@@ -588,6 +588,27 @@ Same as CrawlResult minus the `html` field.
 
 ## Environment Variables
 
+### PDF & OCR
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PDF_ENABLED` | `true` | Extract PDFs instead of rendering them in the browser |
+| `PDF_MAX_BYTES` | `52428800` | Largest PDF fetched (50 MiB) |
+| `PDF_MAX_PAGES` | `300` | Pages read from the text layer |
+| `PDF_MIN_TEXT_CHARS` | `40` | Below this a page counts as image-only and goes to OCR |
+| `PDF_RENDER_DPI` | `110` | Render DPI for OCR pages and `/api/pdf/pages` |
+| `PDF_MAX_IMAGE_SIDE` | `1280` | Longest edge (px) of an OCR page image; lowers DPI on big pages |
+| `PDF_VISION_FALLBACK` | `true` | OCR image-only pages with the Ghost vision provider |
+| `PDF_VISION_MAX_PAGES` | `20` | Cap on OCR pages per document |
+| `PDF_VISION_CONCURRENCY` | `1` | Parallel OCR calls (keep 1 on a shared GPU) |
+| `AGENT_GHOST_VISION_PROVIDER` | `` (agent provider) | `ollama`, `anthropic` or `openai` for Ghost + PDF OCR |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Native Ollama base URL (compose sets `http://host.docker.internal:11434`) |
+| `OLLAMA_VISION_MODEL` | `benhaotang/Nanonets-OCR-s:latest` | Vision/OCR model; must be pulled on the Ollama host |
+| `OLLAMA_API_KEY` | none | Bearer token for a hosted Ollama; unused locally |
+| `OLLAMA_KEEP_ALIVE` | `5m` | Keeps the OCR model loaded between pages; grub unloads it after the last page |
+| `OLLAMA_NUM_CTX` | `8192` | Context for one page image plus up to 4K output tokens |
+| `OLLAMA_VISION_TIMEOUT_S` | `180` | Per-page timeout; the first call also loads the model |
+
 ### Server
 
 | Variable | Default | Description |

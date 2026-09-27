@@ -89,7 +89,10 @@ We integrated features from every major crawler — then added what none of them
 | `POST` | `/api/pdf/pages` | PDF pages as text + rendered PNG (base64) | Live |
 
 PDF URLs are handled by `/api/crawl`, `/api/markdown` and `/api/batch` without the browser: the text layer is
-extracted per page (PyMuPDF) and image-only pages fall back to the configured vision provider for OCR.
+extracted per page (PyMuPDF) and image-only pages fall back to the configured vision provider for OCR
+(local default: Ollama with `benhaotang/Nanonets-OCR-s`; set `AGENT_GHOST_VISION_PROVIDER=anthropic` or `openai`
+with a key to use a hosted model instead). OCR'd pages are labelled `source: "ocr"` with the model name and get a
+`<!-- ocr: <model> -->` marker under their heading, so transcriptions are never mistaken for the source text.
 Output is markdown with one `## Page N` section per page; `render_mode` reports `pdf_text`, `pdf_vision`,
 `pdf_mixed` or `pdf_empty`.
 

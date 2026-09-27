@@ -350,7 +350,7 @@ class PdfPagesRequest(BaseModel):
 
 class PdfPageItem(BaseModel):
     number: int
-    source: str = "empty"  # text | empty | error | render
+    source: str = "empty"  # text_layer | empty | error (no OCR on this route)
     char_count: int = 0
     text: Optional[str] = None
     image_base64: Optional[str] = None
