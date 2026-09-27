@@ -86,6 +86,12 @@ We integrated features from every major crawler — then added what none of them
 | `POST` | `/api/raw` | Raw HTML extraction (no markdown) | Live |
 | `GET`  | `/view` | Browser-rendered HTML viewer | Live |
 | `GET`  | `/download` | File download (PDFs, etc.) through crawler | Live |
+| `POST` | `/api/pdf/pages` | PDF pages as text + rendered PNG (base64) | Live |
+
+PDF URLs are handled by `/api/crawl`, `/api/markdown` and `/api/batch` without the browser: the text layer is
+extracted per page (PyMuPDF) and image-only pages fall back to the configured vision provider for OCR.
+Output is markdown with one `## Page N` section per page; `render_mode` reports `pdf_text`, `pdf_vision`,
+`pdf_mixed` or `pdf_empty`.
 
 ### Agent (Mode B)
 | Method | Path | Description | Status |

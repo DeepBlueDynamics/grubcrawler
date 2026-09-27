@@ -503,6 +503,27 @@ Deploy: `gcloud run deploy deepblue-site --source . --region us-central1 --proje
 
 ---
 
-**Last Updated**: April 16, 2026
-**Current Version**: v1.0.0 (grub-crawl-00003-q9c)
+## Session Updates (September 27, 2026)
+
+### PDF support (v0.15.0)
+
+`app/pdf.py` is new: PyMuPDF text layer per page, page rendering to PNG, and a vision OCR fallback for
+image-only pages using the Ghost provider (`create_ghost_provider`) with a prompt adapted from gnosis-ocr.
+`CrawlerEngine.crawl_url` short-circuits `.pdf` URLs before the browser (`_fetch_pdf_bytes` → `_crawl_pdf`),
+detects Firefox's pdf.js viewer after a browser capture (`pdfx.html_is_pdf_viewer`), and catches Chromium's
+"Download is starting" abort. New route `POST /api/pdf/pages`; new AHP/MCP tools `download` and `pdf_extract`.
+Settings: `PDF_ENABLED`, `PDF_MAX_BYTES`, `PDF_MAX_PAGES`, `PDF_MIN_TEXT_CHARS`, `PDF_RENDER_DPI`,
+`PDF_VISION_FALLBACK`, `PDF_VISION_MAX_PAGES`, `PDF_VISION_CONCURRENCY`. Tests: `tests/test_pdf.py` (needs pymupdf,
+run inside the container). The vision fallback is skipped, not attempted, when the provider has no API key.
+
+### Exit-IP check is out-of-band (v0.14.0)
+
+`BrowserEngine._check_exit_ip` uses httpx through the launch proxy instead of a throwaway browser context.
+The old version opened and closed a context as the first action after launch and wedged Camoufox networking
+for the next crawl (document loaded, no subresources, parser stuck on the first blocking script).
+
+---
+
+**Last Updated**: September 27, 2026
+**Current Version**: v0.15.0
 **Status**: Production Ready ✅ — deployed to Cloud Run; cookie injection deployed with this revision

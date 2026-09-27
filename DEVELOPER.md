@@ -453,12 +453,18 @@ Lists screenshot files for a session.
 | `GET /tools` | None | List registered AHP crawl tools |
 | `GET /view?url=...` | None | Proxy-render a page as HTML in the browser |
 | `GET /download?url=...&save=false&download=false` | None | Fetch a binary file |
+| `POST /api/pdf/pages` | Optional | Fetch a PDF; per-page text and rendered PNG pages (base64) |
 | `GET /docs` | None | API documentation page |
 | `GET /` or `/site` | None | Landing page |
 
 **`/view` params:** `url`, `javascript` (bool, default: true), `timeout` (int, default: 30)
 
 **`/download` params:** `url`, `use_browser` (bool), `javascript` (bool), `timeout` (int), `session_id`, `save` (bool), `filename`, `download` (bool — triggers `Content-Disposition: attachment`)
+
+**`/api/pdf/pages` body (`PdfPagesRequest`):** `url`, `pages` (1-based list; default first `max_pages`), `dpi` (36–300, default 110), `max_pages` (1–100, default 20), `include_text`, `include_images`, `timeout`, `proxy`, `session_id` (also stores PNGs under `pdf/`), `customer_id`.
+Returns `PdfPagesResponse`: `page_count`, `title`, `size_bytes` and `pages[]` with `number`, `source` (`text`|`empty`|`error`), `char_count`, `text`, `image_base64`, `width`, `height`, `saved_path`. Text here is the PDF text layer only; the OCR fallback runs in the crawl endpoints.
+
+**PDF handling in `/api/crawl`, `/api/markdown`, `/api/batch`:** a URL ending in `.pdf` is fetched over HTTP (then via the browser if HTTP fails) and never rendered in the browser. If the browser is handed a PDF anyway (Firefox shows its pdf.js viewer; Chromium aborts with "Download is starting"), the crawler detects it and switches to extraction. Text comes from PyMuPDF; pages with fewer than `PDF_MIN_TEXT_CHARS` characters are rendered at `PDF_RENDER_DPI` and sent to the Ghost vision provider with an OCR prompt (up to `PDF_VISION_MAX_PAGES` pages, `PDF_VISION_CONCURRENCY` at a time) when `PDF_VISION_FALLBACK=true` and a provider key is configured. The response carries `render_mode` (`pdf_text`, `pdf_vision`, `pdf_mixed`, `pdf_empty`) and `metadata.page_info.pdf` (page counts, sizes, timings, `saved_path` under `downloads/` when a session is given). `PDF_MAX_BYTES` (50 MiB) and `PDF_MAX_PAGES` (300) cap the work; `PDF_ENABLED=false` turns the whole path off.
 
 ---
 

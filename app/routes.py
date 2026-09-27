@@ -1,6 +1,8 @@
 """
 API routes for Grub Crawler service
 """
+import asyncio
+import base64
 import uuid
 import logging
 from typing import List, Optional, Dict, Any
@@ -8,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from datetime import datetime
 
 from app.models import (
+    PdfPagesRequest, PdfPagesResponse, PdfPageItem,
     CrawlRequest, CrawlResult,
     MarkdownRequest, MarkdownResult,
     RawHtmlRequest, RawHtmlResult,
@@ -854,6 +857,89 @@ _API_ENDPOINT_HINT = {
     },
     "hint": "All POST endpoints accept JSON. See /docs for full schema.",
 }
+
+@router.post("/pdf/pages", response_model=PdfPagesResponse)
+async def pdf_pages(
+    request: PdfPagesRequest,
+    user_email: Optional[str] = Depends(get_optional_user_email),
+):
+    """Fetch a PDF and return per-page text and/or rendered PNG pages (base64).
+
+    Text comes from the PDF's text layer only (no vision OCR here); use
+    ``/api/crawl`` or ``/api/markdown`` on the PDF URL for the OCR fallback.
+    With ``session_id`` the page images are also stored under ``pdf/``.
+    """
+    from app import pdf as pdfx
+
+    url = str(request.url)
+    customer_identifier = get_customer_identifier(request.customer_id, user_email)
+    crawler = await get_crawler_engine(customer_identifier)
+
+    try:
+        fetched = await crawler._fetch_pdf_bytes(
+            url, proxy=resolve_proxy(request.proxy), timeout=request.timeout
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc))
+    if fetched is None:
+        raise HTTPException(status_code=422, detail="URL did not return a PDF")
+    body: bytes = fetched["content"]
+
+    try:
+        extraction = await asyncio.to_thread(
+            pdfx.extract_text, body, max_pages=None, min_text_chars=settings.pdf_min_text_chars
+        )
+        wanted = request.pages or list(range(1, min(extraction.page_count, request.max_pages) + 1))
+        wanted = [n for n in wanted if 1 <= n <= extraction.page_count][: request.max_pages]
+        rendered = (
+            await asyncio.to_thread(pdfx.render_pages, body, pages=wanted, dpi=request.dpi, max_pages=request.max_pages)
+            if request.include_images else []
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    text_by_number = {p.number: p for p in extraction.pages}
+    image_by_number = {p.number: p for p in rendered}
+    stem = (fetched.get("filename") or "document.pdf").rsplit(".", 1)[0]
+    items: List[PdfPageItem] = []
+    for number in wanted:
+        text_page = text_by_number.get(number)
+        image_page = image_by_number.get(number)
+        item = PdfPageItem(number=number)
+        if text_page is not None:
+            item.source = text_page.source
+            item.char_count = text_page.char_count
+            item.text = text_page.text if request.include_text else None
+            item.error = text_page.error
+        if image_page is not None:
+            if image_page.image_png:
+                item.image_base64 = base64.b64encode(image_page.image_png).decode("ascii")
+                item.width, item.height = image_page.width, image_page.height
+                if request.session_id:
+                    saved = f"pdf/{stem}_page_{number}.png"
+                    try:
+                        await crawler.storage.save_file(image_page.image_png, saved, request.session_id)
+                        item.saved_path = saved
+                    except Exception as exc:
+                        logger.warning(f"Could not save PDF page image {saved}: {exc}")
+            elif image_page.error:
+                item.error = (item.error + "; " if item.error else "") + image_page.error
+        items.append(item)
+
+    return PdfPagesResponse(
+        success=True,
+        url=url,
+        final_url=fetched.get("final_url") or url,
+        status_code=fetched.get("status_code"),
+        title=extraction.title or pdfx.title_from_url(url),
+        page_count=extraction.page_count,
+        returned_pages=len(items),
+        size_bytes=len(body),
+        pages=items,
+        session_id=request.session_id,
+        crawled_at=datetime.utcnow(),
+    )
+
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 async def api_not_found(path: str, request: Request):

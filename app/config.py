@@ -60,6 +60,16 @@ class Settings(BaseSettings):
     agent_ghost_max_image_width: int = 1280
     agent_ghost_max_retries: int = 1
 
+    # PDF extraction: text layer via PyMuPDF, vision OCR fallback for scanned pages
+    pdf_enabled: bool = True
+    pdf_max_bytes: int = 50 * 1024 * 1024
+    pdf_max_pages: int = 300
+    pdf_min_text_chars: int = 40  # below this a page counts as image-only
+    pdf_render_dpi: int = 110
+    pdf_vision_fallback: bool = True  # uses the Ghost vision provider when configured
+    pdf_vision_max_pages: int = 20
+    pdf_vision_concurrency: int = 2
+
     # Live Browser Stream Configuration
     browser_pool_size: int = 1
     browser_stream_enabled: bool = False

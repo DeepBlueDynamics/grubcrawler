@@ -28,6 +28,9 @@ readability-lxml>=0.8.0
 # Markdown generation (for Phase 2)
 markdownify>=0.11.0
 
+# PDF extraction (text layer + page rendering; vision OCR uses the LLM providers below)
+pymupdf>=1.24.0
+
 # Stealth (anti-detection)
 patchright>=1.50.0
 playwright-stealth>=2.0.2

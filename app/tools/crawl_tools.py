@@ -256,3 +256,82 @@ async def crawler_info() -> Dict[str, Any]:
         "supported_formats": ["html", "markdown", "json"],
         "supported_screenshot_modes": ["full", "top", "off"]
     }
+
+
+@tool(description="Download a file (PDF, image, archive, ...) through the crawler and store it in a session")
+async def download(url: str, session_id: str = "", filename: str = "", use_browser: bool = False) -> Dict[str, Any]:
+    """Fetch a binary file and save it under downloads/ in the session storage.
+
+    Args:
+        url: File URL to download
+        session_id: Session to store the file in (generated when empty)
+        filename: Override the stored file name (derived from the URL/headers when empty)
+        use_browser: Fetch through the stealth browser instead of plain HTTP (default: False)
+
+    Returns:
+        Dict with filename, content_type, size_bytes, saved_path and session_id
+    """
+    try:
+        crawler = await get_crawler_engine()
+        sid = session_id or str(uuid.uuid4())
+        result = await crawler.fetch_binary(
+            url=url, use_browser=use_browser, session_id=sid, filename=filename or None
+        )
+        if not result.get("success"):
+            return {"url": url, "error": result.get("error") or "download failed", "metadata": {"status": "failed"}}
+        return {
+            "url": url,
+            "session_id": sid,
+            "filename": result.get("filename"),
+            "content_type": result.get("content_type"),
+            "size_bytes": len(result.get("content") or b""),
+            "saved_path": result.get("saved_path"),
+            "status_code": result.get("status_code"),
+            "metadata": {"status": "success"},
+        }
+    except Exception as e:
+        logger.error(f"Error in download tool: {e}", exc_info=True)
+        return {"url": url, "error": str(e), "metadata": {"status": "error"}}
+
+
+@tool(description="Extract a PDF at a URL as markdown, one section per page; image-only pages go through vision OCR")
+async def pdf_extract(url: str, max_pages: int = 50, vision: bool = True) -> Dict[str, Any]:
+    """Fetch a PDF and return its text as markdown with a ## Page N section per page.
+
+    Args:
+        url: PDF URL
+        max_pages: Stop after this many pages (default: 50)
+        vision: OCR image-only pages with the configured vision provider (default: True)
+
+    Returns:
+        Dict with title, markdown, per-page sources and extraction metadata
+    """
+    from app import pdf as pdfx
+    from app.config import settings
+
+    try:
+        crawler = await get_crawler_engine()
+        fetched = await crawler._fetch_pdf_bytes(url)
+        if fetched is None:
+            return {"url": url, "error": "URL did not return a PDF", "metadata": {"status": "failed"}}
+        extraction = await pdfx.extract(
+            fetched["content"],
+            vision_provider=crawler._pdf_vision_provider() if vision else None,
+            max_pages=max_pages,
+            min_text_chars=settings.pdf_min_text_chars,
+            dpi=settings.pdf_render_dpi,
+            max_vision_pages=settings.pdf_vision_max_pages,
+            vision_concurrency=settings.pdf_vision_concurrency,
+        )
+        if not extraction.title:
+            extraction.title = pdfx.title_from_url(url)
+        return {
+            "url": url,
+            "title": extraction.title,
+            "markdown": extraction.to_markdown(),
+            "pages": [{"number": p.number, "source": p.source, "char_count": p.char_count} for p in extraction.pages],
+            "metadata": {**extraction.summary(), "size_bytes": len(fetched["content"]), "status": "success"},
+        }
+    except Exception as e:
+        logger.error(f"Error in pdf_extract tool: {e}", exc_info=True)
+        return {"url": url, "error": str(e), "metadata": {"status": "error"}}

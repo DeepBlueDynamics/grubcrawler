@@ -20,6 +20,7 @@ from app.storage import CrawlStorageService
 from app.config import settings
 from app import __version__
 from app.policy.injection import analyze_hidden_prompt_injection
+from app import pdf as pdfx
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,21 @@ class CrawlerEngine:
                 if domain.startswith("www."):
                     domain = domain[4:]
 
+            # PDF short-circuit: a .pdf URL never needs the browser.
+            take_screenshot = screenshot and screenshot_mode != "off"
+            if settings.pdf_enabled and pdfx.url_hints_pdf(url):
+                pdf_started = time.time()
+                fetched_pdf = await self._fetch_pdf_bytes(url, proxy=proxy, timeout=timeout)
+                if fetched_pdf is not None:
+                    await self._crawl_pdf(
+                        result, url, fetched_pdf,
+                        session_id=session_id, take_screenshot=take_screenshot, started_at=pdf_started,
+                    )
+                    result.success = True
+                    result.processing_time = time.time() - start_time
+                    return result
+                logger.info(f"{url} ends in .pdf but did not fetch as a PDF; falling back to the browser")
+
             # Get browser engine and crawl with isolated context
             browser = await get_browser_engine()
 
@@ -210,6 +226,19 @@ class CrawlerEngine:
                 )
 
             result.html, result.page_info, screenshot_data = await run_capture(javascript, warmup=warmup)
+
+            if settings.pdf_enabled and pdfx.html_is_pdf_viewer(result.html):
+                logger.info(f"Browser rendered its PDF viewer for {url}; extracting the PDF instead")
+                fetched_pdf = await self._fetch_pdf_bytes(url, proxy=proxy, timeout=timeout)
+                if fetched_pdf is not None:
+                    await self._crawl_pdf(
+                        result, url, fetched_pdf,
+                        session_id=session_id, take_screenshot=take_screenshot, started_at=browser_start,
+                    )
+                    result.success = True
+                    result.processing_time = time.time() - start_time
+                    return result
+                logger.warning(f"PDF viewer detected for {url} but the PDF could not be fetched; returning viewer text")
             self._populate_result_metadata(result)
             self._populate_content_fields(result, url, dedupe_tables=dedupe_tables)
 
@@ -272,6 +301,21 @@ class CrawlerEngine:
             logger.info(f"Successfully crawled {url} in {result.processing_time:.2f}s")
             
         except Exception as e:
+            # Chromium refuses to navigate to a PDF ("Download is starting"); fetch it directly instead.
+            if settings.pdf_enabled and "download is starting" in str(e).lower():
+                try:
+                    fetched_pdf = await self._fetch_pdf_bytes(url, proxy=proxy, timeout=timeout)
+                    if fetched_pdf is not None:
+                        await self._crawl_pdf(
+                            result, url, fetched_pdf,
+                            session_id=session_id, take_screenshot=screenshot and screenshot_mode != "off",
+                            started_at=start_time,
+                        )
+                        result.success = True
+                        result.processing_time = time.time() - start_time
+                        return result
+                except Exception as pdf_exc:
+                    logger.warning(f"PDF fallback after download abort failed for {url}: {pdf_exc}")
             result.error_message = str(e)
             result.processing_time = time.time() - start_time
             logger.error(f"Failed to crawl {url}: {e}", exc_info=True)
@@ -586,6 +630,150 @@ class CrawlerEngine:
             result["processing_time"] = time.time() - start_time
 
         return result
+
+    # ------------------------------------------------------------------
+    # PDF support
+    # ------------------------------------------------------------------
+
+    async def _fetch_pdf_bytes(
+        self,
+        url: str,
+        *,
+        proxy=None,
+        timeout: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch ``url`` and return the fetch_binary dict if the body is a PDF, else None.
+
+        Plain HTTP first (no browser start-up cost), then the browser, which may
+        hold a solved challenge or proxy session that plain HTTP does not.
+        Raises ValueError when the PDF is larger than ``settings.pdf_max_bytes``.
+        """
+        if not settings.pdf_enabled:
+            return None
+        for use_browser in (False, True):
+            try:
+                fetched = await self.fetch_binary(url=url, use_browser=use_browser, javascript=True, timeout=timeout)
+            except Exception as exc:
+                logger.warning(f"PDF fetch ({'browser' if use_browser else 'http'}) failed for {url}: {exc}")
+                continue
+            if not fetched.get("success"):
+                continue
+            body = fetched.get("content") or b""
+            if not pdfx.looks_like_pdf(head=body[:16]):
+                logger.debug(f"{url} fetched via {'browser' if use_browser else 'http'} is not a PDF")
+                continue
+            if len(body) > settings.pdf_max_bytes:
+                raise ValueError(f"PDF is {len(body)} bytes; pdf_max_bytes is {settings.pdf_max_bytes}")
+            fetched.setdefault("final_url", url)
+            return fetched
+        return None
+
+    def _pdf_vision_provider(self):
+        """The Ghost vision provider, or None when disabled or not configured."""
+        if not settings.pdf_vision_fallback:
+            return None
+        try:
+            from app.agent.ghost import create_ghost_provider
+            from app.agent.providers.base import _pick_key
+
+            provider_name = settings.agent_ghost_vision_provider or settings.agent_provider
+            if provider_name != "ollama" and not _pick_key(settings, provider_name):
+                logger.info(f"No API key for vision provider {provider_name!r}; image-only PDF pages stay empty")
+                return None
+            return create_ghost_provider()
+        except Exception as exc:
+            logger.info(f"No vision provider for PDF OCR fallback ({exc}); image-only pages stay empty")
+            return None
+
+    async def _crawl_pdf(
+        self,
+        result: CrawlResult,
+        url: str,
+        fetched: Dict[str, Any],
+        *,
+        session_id: Optional[str],
+        take_screenshot: bool,
+        started_at: float,
+    ) -> None:
+        """Fill ``result`` from PDF bytes: text layer, vision OCR for image-only pages, markdown per page."""
+        body: bytes = fetched["content"]
+        extraction = await pdfx.extract(
+            body,
+            vision_provider=self._pdf_vision_provider(),
+            max_pages=settings.pdf_max_pages,
+            min_text_chars=settings.pdf_min_text_chars,
+            dpi=settings.pdf_render_dpi,
+            max_vision_pages=settings.pdf_vision_max_pages,
+            vision_concurrency=settings.pdf_vision_concurrency,
+        )
+        if not extraction.title:
+            extraction.title = pdfx.title_from_url(url)
+
+        result.html = ""
+        result.markdown = extraction.to_markdown()
+        result.markdown_plain = result.markdown
+        result.content = extraction.to_text()
+        result.title = extraction.title
+        result.status_code = fetched.get("status_code")
+        result.final_url = fetched.get("final_url") or url
+        result.render_mode = extraction.render_mode
+        result.wait_strategy = "none"
+        result.timings_ms = dict(extraction.timings_ms)
+        pdf_info = {**extraction.summary(), "size_bytes": len(body), "filename": fetched.get("filename")}
+        result.page_info = {
+            "title": result.title,
+            "url": result.final_url,
+            "status_code": result.status_code,
+            "content_type": "application/pdf",
+            "render_mode": result.render_mode,
+            "wait_strategy": "none",
+            "timings_ms": result.timings_ms,
+            "pdf": pdf_info,
+        }
+        result.http_error_family = self._http_error_family(result.status_code)
+        result.normalized_url = self._normalize_url(result.final_url)
+        result.body_char_count = len((result.content or "").strip())
+        result.body_word_count = len(re.findall(r"\b\w+\b", result.content or ""))
+        result.blocked, result.block_reason, result.captcha_detected = False, "", False
+        result.content_quality = self._classify_content_quality(
+            body_char_count=result.body_char_count,
+            body_word_count=result.body_word_count,
+            blocked=False,
+            status_code=result.status_code,
+            content=result.content,
+        )
+        result.content_hash = hashlib.sha256(result.content.encode("utf-8")).hexdigest() if result.content else ""
+        result.browser_time = time.time() - started_at
+        result.markdown_time = 0.0
+
+        if session_id:
+            name = fetched.get("filename") or "document.pdf"
+            try:
+                await self.storage.save_file(body, f"downloads/{name}", session_id)
+                pdf_info["saved_path"] = f"downloads/{name}"
+            except Exception as exc:
+                logger.warning(f"Could not save PDF bytes for {url}: {exc}")
+
+        if take_screenshot:
+            try:
+                first = await asyncio.to_thread(
+                    pdfx.render_pages, body, pages=[1], dpi=settings.pdf_render_dpi, max_pages=1
+                )
+                png = first[0].image_png if first else None
+                if png and session_id:
+                    result.screenshot_path = await self._save_screenshot_data(png, url, session_id)
+                elif png:
+                    result.screenshot_path = "inline_screenshot"
+            except Exception as exc:
+                logger.warning(f"PDF first-page screenshot failed for {url}: {exc}")
+
+        if session_id:
+            await self._save_crawl_result(result, session_id)
+
+        logger.info(
+            f"PDF extracted for {url}: {extraction.page_count} pages, mode={extraction.render_mode}, "
+            f"words={result.body_word_count}, vision_pages={extraction.vision_pages}"
+        )
 
     async def fetch_binary(
         self,

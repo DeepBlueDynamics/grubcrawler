@@ -331,3 +331,45 @@ class GhostExtractResponse(BaseModel):
     total_ms: int = 0
     provider: Optional[str] = None
     error: Optional[str] = None
+
+
+# PDF page rendering / extraction
+class PdfPagesRequest(BaseModel):
+    """Fetch a PDF and return per-page text and/or rendered page images."""
+    url: HttpUrl
+    pages: Optional[List[int]] = Field(None, description="1-based page numbers; omit for the first max_pages")
+    dpi: int = Field(default=110, ge=36, le=300)
+    max_pages: int = Field(default=20, ge=1, le=100)
+    include_text: bool = True
+    include_images: bool = True
+    timeout: int = Field(default=30, ge=5, le=300)
+    proxy: Optional[ProxyConfig] = None
+    session_id: Optional[str] = None
+    customer_id: Optional[str] = None
+
+
+class PdfPageItem(BaseModel):
+    number: int
+    source: str = "empty"  # text | empty | error | render
+    char_count: int = 0
+    text: Optional[str] = None
+    image_base64: Optional[str] = None
+    width: int = 0
+    height: int = 0
+    saved_path: Optional[str] = None
+    error: Optional[str] = None
+
+
+class PdfPagesResponse(BaseModel):
+    success: bool
+    url: str
+    final_url: Optional[str] = None
+    status_code: Optional[int] = None
+    title: str = ""
+    page_count: int = 0
+    returned_pages: int = 0
+    size_bytes: int = 0
+    pages: List[PdfPageItem] = []
+    session_id: Optional[str] = None
+    error: Optional[str] = None
+    crawled_at: datetime
