@@ -46,6 +46,7 @@ We integrated features from every major crawler — then added what none of them
 | **Agent loop** | ✅ agentic | ✅ /agent | ❌ spiders | ✅ **bounded SM** |
 | **Live browser stream** | ✅ WebSocket | ✅ Live View | ❌ | ✅ **WS + MJPEG** |
 | **Markdown output** | ✅ Fit Markdown | ✅ core | ❌ | ✅ **Rust engine** |
+| **PDF extraction** | ✅ PDF strategy | ✅ parse | ❌ | ✅ **text layer + OCR fallback** |
 | **MCP tools** | ✅ community | ✅ official | ⚠️ community | ✅ **15 tools** |
 | **Multi-provider LLM** | ✅ all LLMs | ⚠️ Gemini | ❌ | ✅ **OpenAI/Anthropic/Ollama** |
 | **Mesh P2P** | ❌ | ❌ | ❌ | ✅ **gossip protocol** |
@@ -181,6 +182,20 @@ The MCP bridge exposes all capabilities to any MCP-compatible host:
 | `set_auth_token` | Save auth token to .wraithenv | Live |
 | `crawl_status` | Report configuration and connection | Live |
 
+### Server tools (`GET /tools`, MCP at `/mcp/`)
+
+The service itself registers these AHP tools; the AHP catch-all (`GET /{tool_name}`) and the MCP transport expose the same set:
+
+| Tool | Description |
+|------|-------------|
+| `crawl` | Crawl a URL → HTML + markdown + metadata |
+| `markdown` | Crawl a URL → markdown only |
+| `batch` | Crawl several URLs and return the results together |
+| `download` | Fetch a binary file (PDF, image, archive) into session storage |
+| `pdf_extract` | PDF → markdown, one `## Page N` section per page, OCR for image-only pages |
+| `ghost_extract` | Ghost Protocol: screenshot + vision extraction of a blocked URL |
+| `crawler_info` | Engine configuration and capabilities |
+
 ## Internal Modules
 
 ### Agent Core (`app/agent/`)
@@ -198,7 +213,7 @@ The MCP bridge exposes all capabilities to any MCP-compatible host:
 | `base.py` | `LLMAdapter` ABC, `FallbackAdapter` (rotate on failure), factory functions | Done |
 | `openai_adapter.py` | OpenAI tool_calls mapping, GPT-4o vision | Done |
 | `anthropic_adapter.py` | Anthropic tool_use/tool_result blocks, Claude Sonnet vision | Done |
-| `ollama_adapter.py` | Ollama HTTP `/api/chat`, llava vision | Done |
+| `ollama_adapter.py` | Ollama HTTP `/api/chat`; vision via `OLLAMA_VISION_MODEL` (default Nanonets-OCR-s) with keep-alive and explicit unload | Done |
 
 ### Policy Gates (`app/policy/`)
 | File | Purpose | Status |
@@ -322,13 +337,14 @@ When a crawl result signals an anti-bot block (Cloudflare challenge, CAPTCHA,
 empty SPA shell), the agent can switch to cloak mode:
 
 1. Take a full-page screenshot via Playwright
-2. Send the image to a vision-capable LLM (Claude Sonnet or GPT-4o)
+2. Send the image to a vision-capable LLM (Claude, GPT-4o, or an Ollama vision model such as Nanonets-OCR-s)
 3. Extract content from the rendered pixels
 4. Return extracted text with `render_mode: "ghost"` in the trace
 
 This bypasses DOM-based anti-bot detection entirely.
 
 Requires `AGENT_GHOST_ENABLED=true`. Auto-triggers on detected blocks when `AGENT_GHOST_AUTO_TRIGGER=true`.
+PDF OCR for image-only pages uses the same vision provider but does not need Ghost to be enabled.
 
 ## Mesh
 
@@ -499,6 +515,16 @@ curl -X POST http://localhost:6792/api/agent/run \
 ./scripts/deploy.sh cloudrun v1.0.0 --mesh-peer http://your-ip:6792 --mesh-secret mykey
 ```
 
+Local OCR: `docker-compose.yml` points the vision provider at the host's Ollama
+(`http://host.docker.internal:11434`) and expects the OCR model to be pulled first:
+
+```bash
+ollama pull benhaotang/Nanonets-OCR-s
+```
+
+Without it, image-only PDF pages come back as `empty` with a warning in the logs. Set
+`AGENT_GHOST_VISION_PROVIDER=anthropic` or `openai` with the matching key to use a hosted model instead.
+
 ### Anti-Detection (Camoufox + Proxy)
 
 ```bash
@@ -582,19 +608,31 @@ open "http://localhost:6792/stream/demo/mjpeg?url=https://example.com"
 - `AGENT_REDACT_SECRETS` (default: true)
 
 ### LLM Providers
-- `AGENT_PROVIDER` — openai | anthropic | ollama (default: openai)
+- `AGENT_PROVIDER` — openai | anthropic | ollama (default: anthropic)
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL` (default: gpt-4.1-mini)
 - `ANTHROPIC_API_KEY`
-- `ANTHROPIC_MODEL` (default: claude-3-5-sonnet-latest)
-- `OLLAMA_BASE_URL` (default: http://localhost:11434)
-- `OLLAMA_MODEL` (default: llama3.1:8b-instruct)
+- `ANTHROPIC_MODEL` (default: claude-haiku-4-5-20251001)
+- `OLLAMA_BASE_URL` (default: http://localhost:11434; docker-compose sets http://host.docker.internal:11434)
+- `OLLAMA_MODEL` (default: llama3.1:8b-instruct) — text/tool-calling model
+- `OLLAMA_VISION_MODEL` (default: benhaotang/Nanonets-OCR-s:latest) — Ghost + PDF OCR
+- `OLLAMA_API_KEY` — bearer token for a hosted Ollama; unset locally
+- `OLLAMA_KEEP_ALIVE` (default: 5m), `OLLAMA_NUM_CTX` (default: 8192), `OLLAMA_VISION_TIMEOUT_S` (default: 180)
 
 ### Ghost Protocol
 - `AGENT_GHOST_ENABLED` (default: false)
 - `AGENT_GHOST_AUTO_TRIGGER` (default: true)
-- `AGENT_GHOST_VISION_PROVIDER` — inherits from AGENT_PROVIDER
+- `AGENT_GHOST_VISION_PROVIDER` — inherits from AGENT_PROVIDER (docker-compose sets ollama)
 - `AGENT_GHOST_MAX_IMAGE_WIDTH` (default: 1280)
+
+### PDF extraction
+- `PDF_ENABLED` (default: true)
+- `PDF_MAX_BYTES` (default: 52428800), `PDF_MAX_PAGES` (default: 300)
+- `PDF_MIN_TEXT_CHARS` (default: 40) — below this a page counts as image-only and goes to OCR
+- `PDF_RENDER_DPI` (default: 110), `PDF_MAX_IMAGE_SIDE` (default: 1280)
+- `PDF_VISION_FALLBACK` (default: true), `PDF_VISION_MAX_PAGES` (default: 20), `PDF_VISION_CONCURRENCY` (default: 1)
+
+Descriptions for every variable are in [DEVELOPER.md → Environment Variables](DEVELOPER.md#environment-variables).
 
 ### Mesh
 - `MESH_ENABLED` (default: false) — master switch
