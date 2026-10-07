@@ -535,7 +535,7 @@ warm per page on the RTX 3060.
 Requested by the Lume session for the boat's Raspberry Pi 5 (HaLOS, Debian 13 arm64, 1.5 GB memory budget,
 ~4 GB free disk). `Dockerfile` gained `libzstd-dev python3-dev pkg-config` so pip can compile `indexed-zstd` on
 arm64; Camoufox ships a Linux arm64 build (`lin: [x86_64, arm64, i686]` in its pkgman) and the mcr Playwright base is
-multi-arch. `Dockerfile.lite` is the Chromium-only variant (~1.2 GB amd64, `BROWSER_ENGINE=chromium`, no Camoufox,
+multi-arch. `Dockerfile.lite` is the Chromium-only variant (~2.4 GB unpacked on amd64, ~2.8 GB on arm64, 1.2 GB compressed; `BROWSER_ENGINE=chromium`, no Camoufox,
 no Xvfb, Rust only in the builder stage). `.github/workflows/release.yml` now builds both variants for amd64 + arm64
 on native runners (`ubuntu-24.04-arm`), pushes by digest and merges manifests: `<version>` and `<version>-lite`.
 `requirements.txt` pins `mcp<2`: mcp 2.x renamed `FastMCP`, the import failed at startup and `/mcp/` was 404 in

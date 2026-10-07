@@ -519,10 +519,10 @@ curl -X POST http://localhost:6792/api/agent/run \
 
 Both are published to Docker Hub for `linux/amd64` and `linux/arm64` as one multi-arch tag each:
 
-| Tag | Dockerfile | Browsers | Size (amd64) | For |
+| Tag | Dockerfile | Browsers | Size, unpacked (compressed pull) | For |
 |-----|------------|----------|--------------|-----|
-| `deepbluedynamics/grubcrawler:<version>` (also `:latest`) | `Dockerfile` | Camoufox (Firefox), Playwright + Patchright Chromium, Xvfb | ~2.9 GB | Cloud Run, workstations, anti-detect crawling |
-| `deepbluedynamics/grubcrawler:<version>-lite` (also `:latest-lite`) | `Dockerfile.lite` | Playwright + Patchright Chromium only, `BROWSER_ENGINE=chromium` | ~1.2 GB | Small hosts such as the Raspberry Pi 5 (HaLOS) |
+| `deepbluedynamics/grubcrawler:<version>` (also `:latest`) | `Dockerfile` | Camoufox (Firefox), Playwright + Patchright Chromium, Xvfb | ~5.0 GB (2.9 GB) | Cloud Run, workstations, anti-detect crawling |
+| `deepbluedynamics/grubcrawler:<version>-lite` (also `:latest-lite`) | `Dockerfile.lite` | Playwright + Patchright Chromium only, `BROWSER_ENGINE=chromium` | ~2.4 GB amd64, ~2.8 GB arm64 (1.2 GB) | Small hosts such as the Raspberry Pi 5 (HaLOS) |
 
 The lite image drops Camoufox (1.3 GB on arm64), Xvfb and the Rust toolchain; markdown, PDF text-layer
 extraction, `/download`, `/api/pdf/pages` and the AHP/MCP tools are identical. PDF OCR for scanned pages needs

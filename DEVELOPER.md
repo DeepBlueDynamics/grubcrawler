@@ -750,8 +750,8 @@ gcloud run deploy grubcrawler \
 
 ### Image variants
 
-`Dockerfile` is the full image (Camoufox + Chromium, ~2.9 GB). `Dockerfile.lite` is Chromium-only with
-`BROWSER_ENGINE=chromium` baked in (~1.2 GB on amd64), built as a multi-stage image: a builder compiles the
+`Dockerfile` is the full image (Camoufox + Chromium, ~5 GB unpacked, 2.9 GB compressed pull). `Dockerfile.lite` is Chromium-only with
+`BROWSER_ENGINE=chromium` baked in (~2.4 GB unpacked on amd64, ~2.8 GB on arm64; 1.2 GB compressed pull), built as a multi-stage image: a builder compiles the
 `grub_md` wheel and any pip package without a prebuilt wheel for the arch (`indexed-zstd` on arm64 needs
 `libzstd-dev` + `python3-dev`), and the runtime is `python:3.10-slim` with Playwright's and Patchright's Chromium
 under `/ms-playwright`. Both build for `linux/amd64` and `linux/arm64`; the release workflow publishes them as
