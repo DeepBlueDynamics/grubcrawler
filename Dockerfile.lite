@@ -1,0 +1,80 @@
+# Grub Crawler — lite image.
+#
+# Chromium only (Playwright + Patchright), no Camoufox, no Xvfb, no Rust
+# toolchain at runtime. Built for small hosts such as the Raspberry Pi 5
+# (HaLOS) where the full image's Firefox-based Camoufox bundle (1.3 GB on
+# arm64) is the wrong size. Everything else works the same: markdown
+# extraction, PDF text-layer extraction, /download, /api/pdf/pages, the
+# AHP/MCP tools. PDF OCR for scanned pages needs a vision provider
+# (Ollama or an API key) and is simply skipped without one.
+#
+# Published as deepbluedynamics/grubcrawler:<version>-lite for linux/amd64
+# and linux/arm64. Build locally with:
+#   docker build -f Dockerfile.lite -t grubcrawler:lite .
+
+ARG PYTHON_IMAGE=python:3.10-slim-bookworm
+
+# ---------------------------------------------------------------------------
+# Stage 1: builder — Rust extension wheel + any pip packages that have no
+# prebuilt wheel for the target arch (indexed-zstd on arm64 compiles here).
+# ---------------------------------------------------------------------------
+FROM ${PYTHON_IMAGE} AS builder
+ENV PIP_NO_CACHE_DIR=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl ca-certificates pkg-config libzstd-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN pip install maturin
+
+WORKDIR /build
+COPY requirements.txt .
+RUN pip wheel --wheel-dir /wheels -r requirements.txt
+
+COPY grub_md/ ./grub_md/
+RUN cd grub_md && maturin build --release --out /wheels
+
+# ---------------------------------------------------------------------------
+# Stage 2: runtime
+# ---------------------------------------------------------------------------
+FROM ${PYTHON_IMAGE}
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app \
+    PIP_NO_CACHE_DIR=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    BROWSER_ENGINE=chromium
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates libzstd1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --shell /bin/bash app
+WORKDIR /app
+
+# Python dependencies from the prebuilt wheels only (no compilers in this stage)
+COPY requirements.txt .
+COPY --from=builder /wheels /wheels
+RUN pip install --no-index --find-links=/wheels -r requirements.txt \
+    && pip install --no-index --find-links=/wheels /wheels/grub_md*.whl \
+    && rm -rf /wheels
+
+# Chromium (Playwright) + stealth Chromium (Patchright) with their system
+# libraries, installed as root into /ms-playwright and readable by the app user.
+RUN playwright install --with-deps chromium \
+    && (patchright install chromium || true) \
+    && chmod -R a+rX /ms-playwright \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY app/ ./app/
+COPY site/ ./site/
+COPY VERSION ./VERSION
+RUN mkdir -p storage && chown -R app:app storage
+
+USER app
+EXPOSE 6792
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-6792}/health || exit 1
+
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-6792}

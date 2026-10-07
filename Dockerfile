@@ -8,12 +8,17 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app
 
-# Install additional dependencies (xvfb required for camoufox headless="virtual")
+# Install additional dependencies (xvfb required for camoufox headless="virtual").
+# libzstd-dev, python3-dev and pkg-config let pip compile packages that ship no
+# prebuilt wheel for the target arch (indexed-zstd on linux/arm64, e.g. Raspberry Pi 5).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     iputils-ping \
     xvfb \
+    libzstd-dev \
+    python3-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust toolchain + C linker for grub_md native extension

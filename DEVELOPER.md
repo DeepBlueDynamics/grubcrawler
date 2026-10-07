@@ -748,6 +748,16 @@ gcloud run deploy grubcrawler \
 # Test at http://localhost:6792
 ```
 
+### Image variants
+
+`Dockerfile` is the full image (Camoufox + Chromium, ~2.9 GB). `Dockerfile.lite` is Chromium-only with
+`BROWSER_ENGINE=chromium` baked in (~1.2 GB on amd64), built as a multi-stage image: a builder compiles the
+`grub_md` wheel and any pip package without a prebuilt wheel for the arch (`indexed-zstd` on arm64 needs
+`libzstd-dev` + `python3-dev`), and the runtime is `python:3.10-slim` with Playwright's and Patchright's Chromium
+under `/ms-playwright`. Both build for `linux/amd64` and `linux/arm64`; the release workflow publishes them as
+`<version>` and `<version>-lite` multi-arch tags. The full Dockerfile also carries the arm64 build deps so
+`docker buildx build --platform linux/arm64 .` works.
+
 ### Cloud Run services
 
 | Service | Domains | Notes |

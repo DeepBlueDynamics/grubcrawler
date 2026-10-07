@@ -1,10 +1,16 @@
 name: Release to Docker Hub
 
 # Fires when a version tag (v0.13.1, v0.14.0, etc.) is pushed.
-# Build the Dockerfile, push to deepbluedynamics/grubcrawler on Docker Hub
-# with both semver tag (e.g. 0.13.1) and the rolling :latest tag.
 #
-# Cloud Run is updated separately via:
+# Two variants, each a multi-arch manifest (linux/amd64 + linux/arm64) built on
+# native GitHub runners (ubuntu-latest + ubuntu-24.04-arm, no QEMU):
+#   full  Dockerfile       -> deepbluedynamics/grubcrawler:<version>, :v<version>, :latest
+#   lite  Dockerfile.lite  -> deepbluedynamics/grubcrawler:<version>-lite, :v<version>-lite, :latest-lite
+# The lite image is Chromium-only (no Camoufox) for small hosts such as the
+# Raspberry Pi 5 / HaLOS deployment next to the Lume Signal K plugin.
+#
+# Each platform image is pushed by digest, then one manifest per variant is
+# created with the tags above. Cloud Run is updated separately via:
 #   gcloud builds submit --config cloudbuild-deploy.yaml ...
 
 on:
@@ -16,11 +22,32 @@ on:
 permissions:
   contents: read
 
+env:
+  IMAGE: deepbluedynamics/grubcrawler
+
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, lite]
+        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - variant: full
+            dockerfile: Dockerfile
+          - variant: lite
+            dockerfile: Dockerfile.lite
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Build slug
+        id: slug
+        run: echo "value=${{ matrix.variant }}-${{ matrix.platform }}" | sed 's#/#-#g' >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -30,24 +57,71 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
-      - name: Extract metadata (tags + labels)
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ steps.slug.outputs.value }}
+          cache-to: type=gha,mode=max,scope=${{ steps.slug.outputs.value }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ steps.slug.outputs.value }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        variant: [full, lite]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.variant }}-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Extract metadata (tags)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: deepbluedynamics/grubcrawler
+          images: ${{ env.IMAGE }}
+          flavor: |
+            suffix=${{ matrix.variant == 'lite' && '-lite' || '' }},onlatest=true
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern=v{{version}}
             type=raw,value=latest
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Create multi-arch manifest and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
+
+      - name: Inspect
+        run: |
+          first_tag=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          docker buildx imagetools inspect "$first_tag"

@@ -48,7 +48,6 @@ storage/
 .env.cloudrun
 
 # Docker
-.dockerignore
 
 # Local crawl/tool artifacts
 crawl_cache/

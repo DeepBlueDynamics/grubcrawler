@@ -42,4 +42,4 @@ anthropic>=0.39.0
 openai>=1.0.0
 
 # MCP server (exposes grub tools to Claude Code and other MCP clients)
-mcp>=1.0.0
+mcp>=1.0.0,<2  # app/mcp_server.py uses the v1 FastMCP API; mcp 2.x renamed it and the server failed to mount

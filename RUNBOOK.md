@@ -44,7 +44,13 @@ Fast Kaniko build (cache at `gcr.io/gnosis-459403/grubcrawler/cache/*`) on `E2_H
 
 ### B. `.github/workflows/release.yml` — Docker Hub (auto on tag)
 
-Fires on `git push` of any `v*` tag. Builds the Dockerfile in GitHub Actions runner, pushes to `deepbluedynamics/grubcrawler` with semver + `:latest` tags. Uses GHA cache (`type=gha`) for camoufox layer reuse. Requires repo secrets `DOCKER_USERNAME` and `DOCKER_TOKEN`.
+Fires on `git push` of any `v*` tag. Builds two variants on native GitHub runners (`ubuntu-latest` for amd64,
+`ubuntu-24.04-arm` for arm64, no QEMU), pushes each platform image by digest, then creates one multi-arch manifest
+per variant on `deepbluedynamics/grubcrawler`: `Dockerfile` → `<version>`, `v<version>`, `latest`; `Dockerfile.lite`
+(Chromium only, no Camoufox, for the Raspberry Pi 5 / HaLOS host) → `<version>-lite`, `v<version>-lite`, `latest-lite`.
+GHA cache is scoped per variant and platform. Requires repo secrets `DOCKER_USERNAME` and `DOCKER_TOKEN`.
+Native arm64 runners are free for public repos; QEMU builds of the jammy base intermittently segfault in `ldconfig`,
+so keep CI on native runners.
 
 ### C. `cloudbuild.yaml` — legacy Docker Hub from Cloud Build
 
@@ -99,7 +105,8 @@ gcloud builds submit --config cloudbuild-deploy.yaml --project gnosis-459403 `
   --region=us-central1 --substitutions "_SHA=$sha"
 ```
 After both finish (~3-5 min each, in parallel):
-- `deepbluedynamics/grubcrawler:0.14.0`, `:v0.14.0`, `:latest` — pushed to Docker Hub by GHA
+- `deepbluedynamics/grubcrawler:0.14.0`, `:v0.14.0`, `:latest` — multi-arch (amd64 + arm64), pushed to Docker Hub by GHA
+- `deepbluedynamics/grubcrawler:0.14.0-lite`, `:v0.14.0-lite`, `:latest-lite` — the Chromium-only variant, same arches
 - `gcr.io/gnosis-459403/grubcrawler:<sha>`, `:latest` — in GCR
 - Cloud Run service `grubcrawler` serving the new SHA
 - `curl https://grub.nuts.services/health` reports `version: "0.14.0"` (from the VERSION file baked into the image)

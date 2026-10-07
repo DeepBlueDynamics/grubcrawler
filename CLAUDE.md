@@ -530,6 +530,17 @@ which must not quote transcriptions as verbatim text). Cloud Run has no Ollama: 
 provider with the `ANTHROPIC_API_KEY` already set on the service. Measured: 22.8 s cold (8.6 s model load), 2.0 s
 warm per page on the RTX 3060.
 
+### arm64 + lite image (October 2026)
+
+Requested by the Lume session for the boat's Raspberry Pi 5 (HaLOS, Debian 13 arm64, 1.5 GB memory budget,
+~4 GB free disk). `Dockerfile` gained `libzstd-dev python3-dev pkg-config` so pip can compile `indexed-zstd` on
+arm64; Camoufox ships a Linux arm64 build (`lin: [x86_64, arm64, i686]` in its pkgman) and the mcr Playwright base is
+multi-arch. `Dockerfile.lite` is the Chromium-only variant (~1.2 GB amd64, `BROWSER_ENGINE=chromium`, no Camoufox,
+no Xvfb, Rust only in the builder stage). `.github/workflows/release.yml` now builds both variants for amd64 + arm64
+on native runners (`ubuntu-24.04-arm`), pushes by digest and merges manifests: `<version>` and `<version>-lite`.
+`requirements.txt` pins `mcp<2`: mcp 2.x renamed `FastMCP`, the import failed at startup and `/mcp/` was 404 in
+every image since the resolver started picking 2.x. Lume calls grub over HTTP (`GRUB_BASE_URL`), not MCP.
+
 ### Exit-IP check is out-of-band (v0.14.0)
 
 `BrowserEngine._check_exit_ip` uses httpx through the launch proxy instead of a throwaway browser context.

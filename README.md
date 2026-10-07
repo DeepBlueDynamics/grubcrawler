@@ -515,6 +515,28 @@ curl -X POST http://localhost:6792/api/agent/run \
 ./scripts/deploy.sh cloudrun v1.0.0 --mesh-peer http://your-ip:6792 --mesh-secret mykey
 ```
 
+#### Image variants and architectures
+
+Both are published to Docker Hub for `linux/amd64` and `linux/arm64` as one multi-arch tag each:
+
+| Tag | Dockerfile | Browsers | Size (amd64) | For |
+|-----|------------|----------|--------------|-----|
+| `deepbluedynamics/grubcrawler:<version>` (also `:latest`) | `Dockerfile` | Camoufox (Firefox), Playwright + Patchright Chromium, Xvfb | ~2.9 GB | Cloud Run, workstations, anti-detect crawling |
+| `deepbluedynamics/grubcrawler:<version>-lite` (also `:latest-lite`) | `Dockerfile.lite` | Playwright + Patchright Chromium only, `BROWSER_ENGINE=chromium` | ~1.2 GB | Small hosts such as the Raspberry Pi 5 (HaLOS) |
+
+The lite image drops Camoufox (1.3 GB on arm64), Xvfb and the Rust toolchain; markdown, PDF text-layer
+extraction, `/download`, `/api/pdf/pages` and the AHP/MCP tools are identical. PDF OCR for scanned pages needs
+a vision provider and is skipped without one. A Pi-sized run looks like:
+
+```bash
+docker run -d --name grub -p 127.0.0.1:6792:6792 --memory 1.5g \
+  -e DISABLE_AUTH=true -e AGENT_ENABLED=false -e AGENT_GHOST_ENABLED=false -e MAX_CONCURRENT_CRAWLS=1 \
+  deepbluedynamics/grubcrawler:latest-lite
+```
+
+Build either locally with `docker build -f Dockerfile.lite -t grubcrawler:lite .` or
+`docker buildx build --platform linux/arm64 -f Dockerfile.lite .`.
+
 Local OCR: `docker-compose.yml` points the vision provider at the host's Ollama
 (`http://host.docker.internal:11434`) and expects the OCR model to be pulled first:
 

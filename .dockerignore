@@ -1,0 +1,22 @@
+# Keep the Docker build context small; the Dockerfiles only COPY
+# requirements.txt, grub_md/, app/, site/ and VERSION.
+.git
+.github
+storage/
+crawl_cache/
+tests/
+plan/
+scripts/
+combat/
+examples/
+node_modules/
+*_versions/
+__pycache__/
+*.pyc
+.venv/
+venv/
+grub_md/target/
+.env
+.env.*
+*.md
+!README.md
