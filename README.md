@@ -20,7 +20,6 @@
 
 <br/>
 
-<a href="#api-endpoints">Endpoints</a> · <a href="#mesh">Mesh</a> · <a href="#anti-detection">Anti-Detection</a> · <a href="#ghost-protocol">Ghost Protocol</a> · <a href="#live-stream">Live Stream</a> · <a href="#mcp-tools-grub-crawlpy">MCP Tools</a> · <a href="#quick-start">Quick Start</a> · <a href="#benchmarks">Benchmarks</a> · <a href="plan/MASTER_PLAN.md">Architecture</a>
 
 ---
 
@@ -29,6 +28,103 @@ Full-stack web crawling engine with JavaScript rendering, Camoufox anti-detect b
 ---
 
 </div>
+
+## Run it
+
+```bash
+# Full image: Camoufox (stealth Firefox) + Chromium. linux/amd64 and linux/arm64.
+docker run -d --name grub -p 6792:6792 -e DISABLE_AUTH=true deepbluedynamics/grubcrawler:latest
+
+# Lite image: Chromium only, about half the size. Raspberry Pi 5 and other small hosts.
+docker run -d --name grub -p 6792:6792 -e DISABLE_AUTH=true deepbluedynamics/grubcrawler:latest-lite
+
+curl http://localhost:6792/health
+```
+
+`DISABLE_AUTH=true` is for your own machine. Anywhere else, leave it unset and put the service behind
+[nuts-auth](https://auth.nuts.services) tokens (`Authorization: Bearer ahp_…`), which is how the hosted
+instance at `https://grub.nuts.services` works.
+
+## Add it to your agent (MCP)
+
+grub is an MCP server (streamable HTTP) at `/mcp/` exposing `grub_crawl`, `grub_screenshot` and
+`grub_diagnose`. Point your harness at `http://localhost:6792/mcp/` for your own container, or at
+`https://grub.nuts.services/mcp/` with a bearer token for the hosted one.
+
+**Claude Code**
+
+```bash
+claude mcp add --transport http grub http://localhost:6792/mcp/
+# hosted
+claude mcp add --transport http --header "Authorization: Bearer ahp_yourtoken" grub https://grub.nuts.services/mcp/
+```
+
+**Cursor** — `.cursor/mcp.json`
+
+```json
+{ "mcpServers": { "grub": { "url": "http://localhost:6792/mcp/",
+                          "headers": { "Authorization": "Bearer ahp_yourtoken" } } } }
+```
+
+**VS Code (Copilot)** — `.vscode/mcp.json`
+
+```json
+{ "servers": { "grub": { "type": "http", "url": "http://localhost:6792/mcp/",
+                       "headers": { "Authorization": "Bearer ahp_yourtoken" } } } }
+```
+
+**Claude Desktop** — `claude_desktop_config.json`, through `mcp-remote`
+
+```json
+{ "mcpServers": { "grub": { "command": "npx",
+    "args": ["-y", "mcp-remote", "https://grub.nuts.services/mcp/", "--header", "Authorization: Bearer ahp_yourtoken"] } } }
+```
+
+**Codex CLI** — `~/.codex/config.toml`
+
+```toml
+[mcp_servers.grub]
+url = "https://grub.nuts.services/mcp/"
+bearer_token_env_var = "GRUB_TOKEN"   # export GRUB_TOKEN=ahp_yourtoken
+```
+
+**Gemini CLI** — `~/.gemini/settings.json`
+
+```json
+{ "mcpServers": { "grub": { "httpUrl": "http://localhost:6792/mcp/",
+                          "headers": { "Authorization": "Bearer ahp_yourtoken" } } } }
+```
+
+The HTTP API has more surface than the MCP tools (batch, PDF pages, jobs, agent runs); see
+[API Endpoints](#api-endpoints). Scanned-PDF OCR needs a vision provider: Ollama on the host
+(`benhaotang/Nanonets-OCR-s`, the docker-compose default) or an `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`.
+
+## First crawl over HTTP
+
+```bash
+curl -X POST http://localhost:6792/api/markdown \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com", "customer_id": "me"}'
+
+# a PDF comes back as markdown, one "## Page N" section per page
+curl -X POST http://localhost:6792/api/markdown \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://arxiv.org/pdf/1706.03762", "customer_id": "me"}'
+```
+
+## Images
+
+| Tag | Browsers | Size, unpacked (compressed pull) | Platforms |
+|-----|----------|----------------------------------|-----------|
+| `deepbluedynamics/grubcrawler:latest`, `:<version>` | Camoufox (Firefox) + Playwright/Patchright Chromium | ~5 GB (2.9 GB) | linux/amd64, linux/arm64 |
+| `deepbluedynamics/grubcrawler:latest-lite`, `:<version>-lite` | Playwright/Patchright Chromium only | ~2.4 GB amd64, ~2.8 GB arm64 (1.2 GB) | linux/amd64, linux/arm64 |
+
+Both share one codebase and API. The lite image sets `BROWSER_ENGINE=chromium`; the full image adds the
+anti-detect Firefox engine, Xvfb and Ghost Protocol's stronger stealth. Build either yourself with
+`docker build .` or `docker build -f Dockerfile.lite .`; the release workflow publishes both for both
+architectures on every version tag.
+
+---
 
 ## Why Grub
 
@@ -196,94 +292,6 @@ The service itself registers these AHP tools; the AHP catch-all (`GET /{tool_nam
 | `ghost_extract` | Ghost Protocol: screenshot + vision extraction of a blocked URL |
 | `crawler_info` | Engine configuration and capabilities |
 
-## Internal Modules
-
-### Agent Core (`app/agent/`)
-| File | Purpose | Status |
-|------|---------|--------|
-| `types.py` | `RunState` enum, `StopReason`, `ToolCall`, `ToolResult`, `AssistantAction`, `RunConfig`, `RunContext`, `StepTrace`, `RunResult` | Done |
-| `errors.py` | Typed errors: `validation_error`, `policy_denied`, `tool_timeout`, `tool_unavailable`, `execution_error`, `provider_error`, `stop_condition` | Done |
-| `dispatcher.py` | Tool validation, timeout enforcement (30s), retry (1x), typed error normalization | Done |
-| `engine.py` | Bounded loop: `plan -> execute -> observe -> stop`. EventBus integration. Returns `(RunResult, RunSummary)` | Done |
-| `ghost.py` | Ghost Protocol: block detection, screenshot capture, vision extraction, auto-trigger | Done |
-
-### Provider Adapters (`app/agent/providers/`)
-| File | Purpose | Status |
-|------|---------|--------|
-| `base.py` | `LLMAdapter` ABC, `FallbackAdapter` (rotate on failure), factory functions | Done |
-| `openai_adapter.py` | OpenAI tool_calls mapping, GPT-4o vision | Done |
-| `anthropic_adapter.py` | Anthropic tool_use/tool_result blocks, Claude Sonnet vision | Done |
-| `ollama_adapter.py` | Ollama HTTP `/api/chat`; vision via `OLLAMA_VISION_MODEL` (default Nanonets-OCR-s) with keep-alive and explicit unload | Done |
-
-### Policy Gates (`app/policy/`)
-| File | Purpose | Status |
-|------|---------|--------|
-| `domain.py` | Domain allowlist, RFC-1918/loopback/link-local deny | Done |
-| `gate.py` | Pre-tool and pre-fetch policy checks with `PolicyVerdict` | Done |
-| `redaction.py` | Secret pattern redaction (API keys, JWTs, private keys) | Done |
-
-### Observability (`app/observability/`)
-| File | Purpose | Status |
-|------|---------|--------|
-| `events.py` | `EventBus` + 7 typed events: `run_start`, `step_start`, `tool_dispatch`, `tool_result`, `policy_denied`, `step_end`, `run_end` | Done |
-| `trace.py` | `TraceCollector`, `RunSummary` JSON serialization, `persist_trace()` / `load_trace()` via storage | Done |
-
-### API Layer
-| File | Purpose | Status |
-|------|---------|--------|
-| `agent_routes.py` | `POST /api/agent/run`, `GET /api/agent/status/{run_id}`. 503 when disabled | Done |
-| `routes.py` | Core crawl/markdown/batch/cache REST endpoints | Done |
-| `job_routes.py` | Job CRUD, session status, Cloud Tasks worker | Done |
-| `jobs.py` | `JobType` enum (incl. `AGENT_RUN`), `JobManager`, `JobProcessor` | Done |
-| `models.py` | All Pydantic models incl. `AgentRunRequest/Response` | Done |
-
-### Anti-Detection (`app/`)
-| File | Purpose | Status |
-|------|---------|--------|
-| `stealth.py` | playwright-stealth patches, tracker domain blocking | Done |
-| `proxy.py` | Per-request proxy resolution with env fallback | Done |
-
-### Mesh (`app/mesh/`)
-| File | Purpose | Status |
-|------|---------|--------|
-| `models.py` | Wire protocol models: NodeInfo, NodeLoad, MeshToolRequest/Response, PeerState | Done |
-| `auth.py` | HMAC-SHA256 token signing/verification with 60s TTL | Done |
-| `client.py` | httpx async client for join, heartbeat, leave, execute_tool | Done |
-| `coordinator.py` | Lifecycle, peer table, heartbeat loop with seed retry | Done |
-| `routes.py` | `/mesh/*` endpoints — join, heartbeat, execute, leave, peers, status | Done |
-| `router.py` | Load scoring + target selection (pure logic, no I/O) | Done |
-| `dispatcher.py` | MeshDispatcher wrapping local Dispatcher for transparent routing | Done |
-
-### Infrastructure
-| File | Purpose | Status |
-|------|---------|--------|
-| `config.py` | All env vars incl. agent + provider + ghost + proxy + stealth config | Done |
-| `storage.py` | User-partitioned storage (local filesystem / GCS) | Done |
-| `crawler.py` | Playwright crawling engine with proxy support | Done |
-| `markdown.py` | HTML to markdown conversion | Done |
-| `browser.py` | Browser automation — Chromium + Camoufox engines | Done |
-| `browser_pool.py` | Persistent browser pool with lease/return pattern | Done |
-| `stream.py` | CDP screencast → WebSocket/MJPEG relay + interactive commands | Done |
-
-## Agent State Machine
-
-```
-INIT -> PLAN -> EXECUTE_TOOL -> OBSERVE -> PLAN -> ... -> RESPOND -> STOP
-                     |                                        |
-                     +-- policy_denied ---------------------->+
-                     +-- max_steps / max_wall_time / max_failures -> STOP
-                     +-- no_op_loop (3x empty) ------------> STOP
-                     +-- blocked (ghost trigger) -----------> GHOST -> OBSERVE
-```
-
-Stop conditions enforced every iteration:
-- `max_steps` (default: 12)
-- `max_wall_time` (default: 90s)
-- `max_failures` (default: 3)
-- `no_op_loop` (3 consecutive empty responses)
-- `policy_denied` (blocked tool/domain)
-- `completed` (agent responds with text)
-
 ## Anti-Detection
 
 Three layers of anti-detection that stack together. Prevention stops blocks before they happen. Ghost Protocol handles them after.
@@ -438,33 +446,7 @@ ws.send(JSON.stringify({ action: "scroll", direction: "down" }));
 
 Requires `BROWSER_STREAM_ENABLED=true`. Each Chromium instance uses ~150-300MB RAM.
 
-## Repository Layout
-
-```
-grubcrawler/
-├── app/                    # FastAPI service — crawler, agent, mesh, policy, observability
-├── site/                   # Embedded landing / dashboard / docs pages
-├── tests/                  # Pytest suites
-├── combat/                 # Head-to-head benchmarks vs Crawl4AI / Firecrawl / Scrapy
-├── examples/               # Integration examples (e.g. shivvr demo)
-├── grub_md/                # Native Rust markdown extraction engine (maturin)
-├── scripts/                # Deploy scripts — deploy.sh, deploy.ps1
-├── plan/                   # Architecture & planning docs (MASTER_PLAN, SERVICE_REGISTRY, CUSTOMER_ID)
-├── Dockerfile              # Service image (Playwright + Camoufox + Rust)
-├── docker-compose.yml      # Single-node local deploy
-├── docker-compose.mesh.yml # 2-node mesh deploy
-├── requirements.txt
-├── pytest.ini
-├── mcp.json                # MCP tool config
-├── gnosis-crawl.py         # Standalone CLI client
-└── README.md / CLAUDE.md / DEVELOPER.md / RUNBOOK.md
-```
-
-Invoke deploy scripts from the repo root: `./scripts/deploy.sh local` (bash) or
-`./scripts/deploy.ps1 -Target local` (PowerShell). `deploy.sh` resolves the
-project root itself, so it also runs correctly from any directory.
-
-## Quick Start
+## Developing from source
 
 ### Local Development
 
@@ -515,28 +497,6 @@ curl -X POST http://localhost:6792/api/agent/run \
 ./scripts/deploy.sh cloudrun v1.0.0 --mesh-peer http://your-ip:6792 --mesh-secret mykey
 ```
 
-#### Image variants and architectures
-
-Both are published to Docker Hub for `linux/amd64` and `linux/arm64` as one multi-arch tag each:
-
-| Tag | Dockerfile | Browsers | Size, unpacked (compressed pull) | For |
-|-----|------------|----------|--------------|-----|
-| `deepbluedynamics/grubcrawler:<version>` (also `:latest`) | `Dockerfile` | Camoufox (Firefox), Playwright + Patchright Chromium, Xvfb | ~5.0 GB (2.9 GB) | Cloud Run, workstations, anti-detect crawling |
-| `deepbluedynamics/grubcrawler:<version>-lite` (also `:latest-lite`) | `Dockerfile.lite` | Playwright + Patchright Chromium only, `BROWSER_ENGINE=chromium` | ~2.4 GB amd64, ~2.8 GB arm64 (1.2 GB) | Small hosts such as the Raspberry Pi 5 (HaLOS) |
-
-The lite image drops Camoufox (1.3 GB on arm64), Xvfb and the Rust toolchain; markdown, PDF text-layer
-extraction, `/download`, `/api/pdf/pages` and the AHP/MCP tools are identical. PDF OCR for scanned pages needs
-a vision provider and is skipped without one. A Pi-sized run looks like:
-
-```bash
-docker run -d --name grub -p 127.0.0.1:6792:6792 --memory 1.5g \
-  -e DISABLE_AUTH=true -e AGENT_ENABLED=false -e AGENT_GHOST_ENABLED=false -e MAX_CONCURRENT_CRAWLS=1 \
-  deepbluedynamics/grubcrawler:latest-lite
-```
-
-Build either locally with `docker build -f Dockerfile.lite -t grubcrawler:lite .` or
-`docker buildx build --platform linux/arm64 -f Dockerfile.lite .`.
-
 Local OCR: `docker-compose.yml` points the vision provider at the host's Ollama
 (`http://host.docker.internal:11434`) and expects the OCR model to be pulled first:
 
@@ -582,6 +542,120 @@ BROWSER_POOL_SIZE=2
 # MJPEG (open in browser)
 open "http://localhost:6792/stream/demo/mjpeg?url=https://example.com"
 ```
+
+## Repository Layout
+
+```
+grubcrawler/
+├── app/                    # FastAPI service — crawler, agent, mesh, policy, observability
+├── site/                   # Embedded landing / dashboard / docs pages
+├── tests/                  # Pytest suites
+├── combat/                 # Head-to-head benchmarks vs Crawl4AI / Firecrawl / Scrapy
+├── examples/               # Integration examples (e.g. shivvr demo)
+├── grub_md/                # Native Rust markdown extraction engine (maturin)
+├── scripts/                # Deploy scripts — deploy.sh, deploy.ps1
+├── plan/                   # Architecture & planning docs (MASTER_PLAN, SERVICE_REGISTRY, CUSTOMER_ID)
+├── Dockerfile              # Service image (Playwright + Camoufox + Rust)
+├── docker-compose.yml      # Single-node local deploy
+├── docker-compose.mesh.yml # 2-node mesh deploy
+├── requirements.txt
+├── pytest.ini
+├── mcp.json                # MCP tool config
+├── gnosis-crawl.py         # Standalone CLI client
+└── README.md / CLAUDE.md / DEVELOPER.md / RUNBOOK.md
+```
+
+Invoke deploy scripts from the repo root: `./scripts/deploy.sh local` (bash) or
+`./scripts/deploy.ps1 -Target local` (PowerShell). `deploy.sh` resolves the
+project root itself, so it also runs correctly from any directory.
+
+## Internal Modules
+
+### Agent Core (`app/agent/`)
+| File | Purpose | Status |
+|------|---------|--------|
+| `types.py` | `RunState` enum, `StopReason`, `ToolCall`, `ToolResult`, `AssistantAction`, `RunConfig`, `RunContext`, `StepTrace`, `RunResult` | Done |
+| `errors.py` | Typed errors: `validation_error`, `policy_denied`, `tool_timeout`, `tool_unavailable`, `execution_error`, `provider_error`, `stop_condition` | Done |
+| `dispatcher.py` | Tool validation, timeout enforcement (30s), retry (1x), typed error normalization | Done |
+| `engine.py` | Bounded loop: `plan -> execute -> observe -> stop`. EventBus integration. Returns `(RunResult, RunSummary)` | Done |
+| `ghost.py` | Ghost Protocol: block detection, screenshot capture, vision extraction, auto-trigger | Done |
+
+### Provider Adapters (`app/agent/providers/`)
+| File | Purpose | Status |
+|------|---------|--------|
+| `base.py` | `LLMAdapter` ABC, `FallbackAdapter` (rotate on failure), factory functions | Done |
+| `openai_adapter.py` | OpenAI tool_calls mapping, GPT-4o vision | Done |
+| `anthropic_adapter.py` | Anthropic tool_use/tool_result blocks, Claude Sonnet vision | Done |
+| `ollama_adapter.py` | Ollama HTTP `/api/chat`; vision via `OLLAMA_VISION_MODEL` (default Nanonets-OCR-s) with keep-alive and explicit unload | Done |
+
+### Policy Gates (`app/policy/`)
+| File | Purpose | Status |
+|------|---------|--------|
+| `domain.py` | Domain allowlist, RFC-1918/loopback/link-local deny | Done |
+| `gate.py` | Pre-tool and pre-fetch policy checks with `PolicyVerdict` | Done |
+| `redaction.py` | Secret pattern redaction (API keys, JWTs, private keys) | Done |
+
+### Observability (`app/observability/`)
+| File | Purpose | Status |
+|------|---------|--------|
+| `events.py` | `EventBus` + 7 typed events: `run_start`, `step_start`, `tool_dispatch`, `tool_result`, `policy_denied`, `step_end`, `run_end` | Done |
+| `trace.py` | `TraceCollector`, `RunSummary` JSON serialization, `persist_trace()` / `load_trace()` via storage | Done |
+
+### API Layer
+| File | Purpose | Status |
+|------|---------|--------|
+| `agent_routes.py` | `POST /api/agent/run`, `GET /api/agent/status/{run_id}`. 503 when disabled | Done |
+| `routes.py` | Core crawl/markdown/batch/cache REST endpoints | Done |
+| `job_routes.py` | Job CRUD, session status, Cloud Tasks worker | Done |
+| `jobs.py` | `JobType` enum (incl. `AGENT_RUN`), `JobManager`, `JobProcessor` | Done |
+| `models.py` | All Pydantic models incl. `AgentRunRequest/Response` | Done |
+
+### Anti-Detection (`app/`)
+| File | Purpose | Status |
+|------|---------|--------|
+| `stealth.py` | playwright-stealth patches, tracker domain blocking | Done |
+| `proxy.py` | Per-request proxy resolution with env fallback | Done |
+
+### Mesh (`app/mesh/`)
+| File | Purpose | Status |
+|------|---------|--------|
+| `models.py` | Wire protocol models: NodeInfo, NodeLoad, MeshToolRequest/Response, PeerState | Done |
+| `auth.py` | HMAC-SHA256 token signing/verification with 60s TTL | Done |
+| `client.py` | httpx async client for join, heartbeat, leave, execute_tool | Done |
+| `coordinator.py` | Lifecycle, peer table, heartbeat loop with seed retry | Done |
+| `routes.py` | `/mesh/*` endpoints — join, heartbeat, execute, leave, peers, status | Done |
+| `router.py` | Load scoring + target selection (pure logic, no I/O) | Done |
+| `dispatcher.py` | MeshDispatcher wrapping local Dispatcher for transparent routing | Done |
+
+### Infrastructure
+| File | Purpose | Status |
+|------|---------|--------|
+| `config.py` | All env vars incl. agent + provider + ghost + proxy + stealth config | Done |
+| `storage.py` | User-partitioned storage (local filesystem / GCS) | Done |
+| `crawler.py` | Playwright crawling engine with proxy support | Done |
+| `markdown.py` | HTML to markdown conversion | Done |
+| `browser.py` | Browser automation — Chromium + Camoufox engines | Done |
+| `browser_pool.py` | Persistent browser pool with lease/return pattern | Done |
+| `stream.py` | CDP screencast → WebSocket/MJPEG relay + interactive commands | Done |
+
+## Agent State Machine
+
+```
+INIT -> PLAN -> EXECUTE_TOOL -> OBSERVE -> PLAN -> ... -> RESPOND -> STOP
+                     |                                        |
+                     +-- policy_denied ---------------------->+
+                     +-- max_steps / max_wall_time / max_failures -> STOP
+                     +-- no_op_loop (3x empty) ------------> STOP
+                     +-- blocked (ghost trigger) -----------> GHOST -> OBSERVE
+```
+
+Stop conditions enforced every iteration:
+- `max_steps` (default: 12)
+- `max_wall_time` (default: 90s)
+- `max_failures` (default: 3)
+- `no_op_loop` (3 consecutive empty responses)
+- `policy_denied` (blocked tool/domain)
+- `completed` (agent responds with text)
 
 ## Configuration
 

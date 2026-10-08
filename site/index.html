@@ -193,6 +193,9 @@
     padding-top: 1.5rem; border-top: 1px solid var(--border);
     display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;
   }
+.harness { margin: 1.1rem 0 0.35rem; font-size: 0.82rem; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
+.harness code { text-transform: none; letter-spacing: 0; }
+.note { color: var(--dim); font-size: 0.8rem; margin: 0.5rem 0 0.25rem; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -210,14 +213,14 @@
   <h1>grub 🕷 <span class="ver" id="hero-ver">v1.0.0</span></h1>
   <p class="sub">Agentic web crawler with bot-bypass and mesh P2P.</p>
   <p class="desc">
-    Crawl any URL — even Cloudflare, Incapsula, or DataDome.<br>
-    Returns clean markdown. Ghost Protocol vision-fallback for hard-blocked pages.<br>
-    Camoufox stealth · MCP tooling · Bounded LLM agent loop · Policy gates · Replayable traces.
+    One container. Crawl any URL — even Cloudflare, Incapsula, or DataDome — and get clean markdown back.<br>
+    Reads PDFs. Ghost Protocol vision fallback for hard-blocked pages. Speaks MCP to your coding agent.
   </p>
   <div class="ctas">
+    <a class="cta" href="#run">Run it</a>
+    <a class="cta" href="#mcp">Add to your agent</a>
+    <a class="cta" href="#api">API</a>
     <a class="cta" href="#tryit">Try it</a>
-    <a class="cta" href="#api">View API</a>
-    <a class="cta" href="#quickstart">Quick Start</a>
     <a class="cta dim" href="/health">Health</a>
     <a class="cta dim" href="https://github.com/DeepBlueDynamics/grubcrawler">GitHub</a>
   </div>
@@ -230,6 +233,54 @@
   <div class="stat"><div class="val" id="s-engine">Camoufox</div><div class="lbl">Engine</div></div>
   <div class="stat"><div class="val" id="s-mcp">MCP</div><div class="lbl">Transport</div></div>
 </div>
+
+<!-- Run it -->
+<h2 id="run">Run it</h2>
+<pre><code><span class="cm"># Full image: Camoufox (stealth Firefox) + Chromium. linux/amd64 + linux/arm64.</span>
+docker run -d --name grub -p 6792:6792 -e DISABLE_AUTH=true deepbluedynamics/grubcrawler:latest
+
+<span class="cm"># Lite image: Chromium only, half the size. Raspberry Pi 5 and other small hosts.</span>
+docker run -d --name grub -p 6792:6792 -e DISABLE_AUTH=true deepbluedynamics/grubcrawler:latest-lite
+
+<span class="cm"># Check it, then crawl something</span>
+curl http://localhost:6792/health
+curl -X POST http://localhost:6792/api/markdown -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com", "customer_id": "me"}'</code></pre>
+<p class="note"><code>DISABLE_AUTH=true</code> is for your own machine. Leave it unset and put the service behind
+<a href="https://auth.nuts.services">nuts-auth</a> tokens when it is reachable by anyone else. Scanned-PDF OCR needs a vision
+provider: Ollama on the host (<code>benhaotang/Nanonets-OCR-s</code>) or an <code>ANTHROPIC_API_KEY</code> / <code>OPENAI_API_KEY</code>.</p>
+
+<!-- MCP -->
+<h2 id="mcp">Add to your agent</h2>
+<p class="note">grub is an MCP server (streamable HTTP) at <code>/mcp/</code> with <code>grub_crawl</code>, <code>grub_screenshot</code>
+and <code>grub_diagnose</code>. Use <code>http://localhost:6792/mcp/</code> for your own container, or the hosted
+<code>https://grub.nuts.services/mcp/</code> with <code>Authorization: Bearer ahp_…</code> from your <a href="/dashboard">dashboard</a>.</p>
+
+<div class="harness">Claude Code</div>
+<pre><code>claude mcp add --transport http grub http://localhost:6792/mcp/
+<span class="cm"># hosted</span>
+claude mcp add --transport http --header "Authorization: Bearer ahp_yourtoken" grub https://grub.nuts.services/mcp/</code></pre>
+
+<div class="harness">Cursor &middot; <code>.cursor/mcp.json</code></div>
+<pre><code>{ "mcpServers": { "grub": { "url": "http://localhost:6792/mcp/",
+                          "headers": { "Authorization": "Bearer ahp_yourtoken" } } } }</code></pre>
+
+<div class="harness">VS Code (Copilot) &middot; <code>.vscode/mcp.json</code></div>
+<pre><code>{ "servers": { "grub": { "type": "http", "url": "http://localhost:6792/mcp/",
+                       "headers": { "Authorization": "Bearer ahp_yourtoken" } } } }</code></pre>
+
+<div class="harness">Claude Desktop &middot; <code>claude_desktop_config.json</code> (via mcp-remote)</div>
+<pre><code>{ "mcpServers": { "grub": { "command": "npx",
+    "args": ["-y", "mcp-remote", "https://grub.nuts.services/mcp/", "--header", "Authorization: Bearer ahp_yourtoken"] } } }</code></pre>
+
+<div class="harness">Codex CLI &middot; <code>~/.codex/config.toml</code></div>
+<pre><code>[mcp_servers.grub]
+url = "https://grub.nuts.services/mcp/"
+bearer_token_env_var = "GRUB_TOKEN"   <span class="cm"># export GRUB_TOKEN=ahp_yourtoken</span></code></pre>
+
+<div class="harness">Gemini CLI &middot; <code>~/.gemini/settings.json</code></div>
+<pre><code>{ "mcpServers": { "grub": { "httpUrl": "http://localhost:6792/mcp/",
+                          "headers": { "Authorization": "Bearer ahp_yourtoken" } } } }</code></pre>
 
 <!-- Capabilities -->
 <h2>Capabilities</h2>
@@ -298,7 +349,7 @@
 </div>
 
 <!-- Quick start -->
-<h2 id="quickstart">Quick start</h2>
+<h2 id="quickstart">Hosted API examples</h2>
 <pre><code><span class="cm"># Crawl → markdown</span>
 curl -X POST https://grub.nuts.services/api/markdown \
   -H "Authorization: Bearer ahp_yourtoken" \
@@ -316,12 +367,7 @@ curl -X POST https://grub.nuts.services/api/markdown \
   -H "Authorization: Bearer ahp_yourtoken" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://target.com", "options": {"cookies": {"visid_incap_X": "..."}}}'
-
-<span class="cm"># Add as MCP server in Claude Code</span>
-claude mcp add grubcrawler \
-  --transport http \
-  --header "Authorization: Bearer ahp_yourtoken" \
-  https://grub.nuts.services/mcp/</code></pre>
+</code></pre>
 
 <!-- Footer links -->
 <div class="links">
