@@ -29,6 +29,8 @@ Full-stack web crawling engine with JavaScript rendering, Camoufox anti-detect b
 
 </div>
 
+An open source project from [DeepBlue Dynamics](https://github.com/deepbluedynamics/), which builds open source agentic tooling for the marine electronics market. DeepBlue's promise: agents and people can ask questions of a boat's instruments, logs and documents, on board and without a connection.
+
 ## Run it
 
 ```bash
